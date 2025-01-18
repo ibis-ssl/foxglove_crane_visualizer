@@ -106,13 +106,18 @@ function CraneVisualizer({ context }: { context: PanelExtensionContext }) {
         general: {
           label: "General",
           fields: {
+            topic: {
+              label: "トピック名",
+              input: "string",
+              value: config.topic,
+            },
             showGrid: {
-              label: "Show Grid",
+              label: "グリッド表示",
               input: "boolean",
               value: config.showGrid,
             },
             testMode: {
-              label: "Test Mode",
+              label: "テストモード",
               input: "boolean",
               value: config.testMode,
             },
