@@ -1,0 +1,43 @@
+{
+  "name": "foxglove-crane-visualizer",
+  "version": "0.0.1",
+  "description": "RoboCup SSL Visualization Panel for Foxglove Studio",
+  "publisher": "ibis-ssl",
+  "keywords": [
+    "foxglove",
+    "visualization",
+    "robocup",
+    "ssl"
+  ],
+  "license": "MIT",
+  "main": "dist/extension.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rimraf dist",
+    "prepack": "npm run build",
+    "foxglove:dev": "foxglove-extension build",
+    "foxglove:package": "foxglove-extension package",
+    "prepare": "npm run clean && npm run build",
+    "local-install": "foxglove-extension install"
+  },
+  "dependencies": {
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  },
+  "devDependencies": {
+    "@foxglove/extension": "2.5.1",
+    "@foxglove/studio": "^1.62.0",
+    "@types/react": "^17.0.53",
+    "@types/react-dom": "^17.0.19",
+    "create-foxglove-extension": "^1.0.4",
+    "rimraf": "^5.0.1",
+    "typescript": "^5.0.4"
+  },
+  "peerDependencies": {
+    "@foxglove/studio": "^1.62.0"
+  }
+}
