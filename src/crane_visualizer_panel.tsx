@@ -94,49 +94,11 @@ function createTestData(time: number): Primitive[] {
   ];
 }
 
-function buildSettingsTree(config: PanelConfig): SettingsTreeNodes {
-  const nodes: SettingsTreeNode = {
-    label: "Settings",
-    fields: {
-      topic: {
-        input: "string",
-        value: config.topic,
-        label: "Topic",
-      },
-      backgroundColor: {
-        input: "rgba",
-        value: config.backgroundColor,
-        label: "Background Color",
-      },
-      showGrid: {
-        input: "boolean",
-        value: config.showGrid,
-        label: "Show Grid",
-      },
-      gridSize: {
-        input: "number",
-        value: config.gridSize,
-        label: "Grid Size",
-      },
-      testMode: {
-        input: "boolean",
-        value: config.testMode,
-        label: "Test Mode",
-      },
-      testSpeed: {
-        input: "number",
-        value: config.testSpeed,
-        label: "Test Speed",
-      },
-    }
-  };
-  return { nodes };
-}
-
 function CraneVisualizer({ context }: { context: PanelExtensionContext }) {
   const [primitives, setPrimitives] = useState<Map<number, Primitive & { expiryTime: number }>>(
     new Map()
   );
+  const [viewBox, setViewBox] = useState("-450 -300 900 600");
 
   const [config, setConfig] = useState<PanelConfig>(defaultConfig);
 
@@ -408,8 +370,37 @@ function CraneVisualizer({ context }: { context: PanelExtensionContext }) {
       <svg
         width="100%"
         height="100%"
-        viewBox="-450 -300 900 600"
+        viewBox={viewBox}
         style={{ backgroundColor: config.backgroundColor }}
+        onMouseDown={(e) => {
+          const startX = e.clientX;
+          const startY = e.clientY;
+          const [x, y, width, height] = viewBox.split(" ").map(Number);
+
+          const handleMouseMove = (e: MouseEvent) => {
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            setViewBox(`${x - dx} ${y - dy} ${width} ${height}`);
+          };
+
+          const handleMouseUp = () => {
+            document.removeEventListener("mousemove", handleMouseMove);
+            document.removeEventListener("mouseup", handleMouseUp);
+          };
+
+          document.addEventListener("mousemove", handleMouseMove);
+          document.addEventListener("mouseup", handleMouseUp);
+        }}
+        onWheel={(e) => {
+          e.preventDefault();
+          const [x, y, width, height] = viewBox.split(" ").map(Number);
+          const scale = e.deltaY > 0 ? 0.9 : 1.1;
+          const newWidth = width * scale;
+          const newHeight = height * scale;
+          const offsetX = (width - newWidth) / 2;
+          const offsetY = (height - newHeight) / 2;
+          setViewBox(`${x + offsetX} ${y + offsetY} ${newWidth} ${newHeight}`);
+        }}
       >
         {config.showGrid && renderGrid()}
         {Array.from(primitives.values()).map(renderPrimitive)}
