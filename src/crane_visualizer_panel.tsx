@@ -59,13 +59,17 @@ const defaultConfig: PanelConfig = {
   testMode: true,
   testSpeed: 1,
   message: "",
-  namespaces: {},
+  namespaces: {
+    testNamespace1: true,
+    testNamespace2: true,
+  },
 };
 
-const createTestData = (time: number): Primitive[] => {
+const createTestData = (time: number, namespaces: { [key: string]: boolean }): Primitive[] => {
   const t = time * 0.001;
-  return [
-    {
+  const primitives: Primitive[] = [];
+  if (namespaces["testNamespace1"]) {
+    primitives.push({
       id: 1,
       type: 2,
       lifetime: 0,
@@ -74,8 +78,10 @@ const createTestData = (time: number): Primitive[] => {
       text: "sduhdsasjhsdkjfdhsjkfhk",
       namespace: "testNamespace1",
       sub_namespace: "testSubNamespace1",
-    },
-    {
+    });
+  }
+  if (namespaces["testNamespace2"]) {
+    primitives.push({
       id: 2,
       type: 0,
       lifetime: 0.1,
@@ -83,8 +89,9 @@ const createTestData = (time: number): Primitive[] => {
       color: "rgba(0, 0, 255, 0.5)",
       namespace: "testNamespace2",
       sub_namespace: "testSubNamespace2",
-    },
-  ];
+    });
+  }
+  return primitives;
 };
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
@@ -106,67 +113,67 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   }, [context, setConfig]);
 
   useEffect(() => {
-    const panelSettings: SettingsTree = {
-      nodes: {
-        general: {
-          label: "General",
-          fields: {
-            topic: { label: "トピック名", input: "string", value: config.topic },
-            showGrid: { label: "グリッド表示", input: "boolean", value: config.showGrid },
-            testMode: { label: "テストモード", input: "boolean", value: config.testMode },
-            backgroundColor: { label: "背景色", input: "rgba", value: config.backgroundColor },
-            fieldColor: { label: "フィールド色", input: "rgba", value: config.fieldColor },
+    const updatePanelSettings = () => {
+      const panelSettings: SettingsTree = {
+        nodes: {
+          general: {
+            label: "General",
+            fields: {
+              topic: { label: "トピック名", input: "string", value: config.topic },
+              showGrid: { label: "グリッド表示", input: "boolean", value: config.showGrid },
+              testMode: { label: "テストモード", input: "boolean", value: config.testMode },
+              backgroundColor: { label: "背景色", input: "rgba", value: config.backgroundColor },
+              fieldColor: { label: "フィールド色", input: "rgba", value: config.fieldColor },
+            },
+          },
+          namespaces: {
+            label: "名前空間",
+            fields: Object.fromEntries(
+              Object.entries(config.namespaces).map(([namespace, visible]) => [
+                namespace as string,
+                { label: namespace, input: "boolean", value: visible, help: "名前空間の表示/非表示" },
+              ])
+            ),
           },
         },
-        namespaces: {
-          label: "名前空間",
-          fields: Object.fromEntries(
-            Object.entries(config.namespaces).map(([namespace, visible]) => [
-              namespace as string,
-              { label: namespace, input: "boolean", value: visible, help: "名前空間の表示/非表示" },
-            ])
-          ),
+        actionHandler: (action: SettingsTreeAction) => {
+          const path = action.payload.path.join(".");
+          switch (action.action) {
+            case "update":
+              setConfig((prevConfig) => {
+                switch (path) {
+                  case "general.showGrid":
+                    return { ...prevConfig, showGrid: action.payload.value as boolean };
+                  case "general.testMode":
+                    return { ...prevConfig, testMode: action.payload.value as boolean };
+                  case "general.backgroundColor":
+                    return { ...prevConfig, backgroundColor: action.payload.value as string };
+                  case "general.fieldColor":
+                    return { ...prevConfig, fieldColor: action.payload.value as string };
+                  default:
+                    if (path.startsWith("namespaces.")) {
+                      const [namespace] = path.split(".").slice(1);
+                      return {
+                        ...prevConfig,
+                        namespaces: {
+                          ...prevConfig.namespaces,
+                          [namespace]: action.payload.value as boolean,
+                        },
+                      };
+                    }
+                    return prevConfig;
+                }
+              });
+              break;
+            case "perform-node-action":
+              break;
+          }
         },
-      },
-      actionHandler: (action: SettingsTreeAction) => {
-        const path = action.payload.path.join(".");
-        switch (action.action) {
-          case "update":
-            setConfig((prevConfig) => {
-              switch (path) {
-                case "general.showGrid":
-                  return { ...prevConfig, showGrid: action.payload.value as boolean };
-                case "general.testMode":
-                  return { ...prevConfig, testMode: action.payload.value as boolean };
-                case "general.backgroundColor":
-                  return { ...prevConfig, backgroundColor: action.payload.value as string };
-                case "general.fieldColor":
-                  return { ...prevConfig, fieldColor: action.payload.value as string };
-                default:
-                  if (path.startsWith("namespaces.")) {
-                    const [namespace] = path.split(".").slice(1);
-                    return {
-                      ...prevConfig,
-                      namespaces: {
-                        ...prevConfig.namespaces,
-                        [namespace]: action.payload.value as boolean,
-                      },
-                    };
-                  }
-                  return prevConfig;
-              }
-            });
-            break;
-          case "perform-node-action":
-            break;
-        }
-      },
+      };
+      context.updatePanelSettingsEditor(panelSettings);
     };
-    context.updatePanelSettingsEditor(panelSettings);
-  }, [context, config, setConfig, setPrimitives, setViewBox]);
 
-  useEffect(() => {
-    if (config.testMode) return;
+    updatePanelSettings();
     const handleMessage: MessageHandler = (event: MessageEvent) => {
       const primitiveMsg = event.message as PrimitiveArray;
       const now = Date.now();
@@ -192,7 +199,8 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     };
     const unsubscribe = context.subscribe([{ topic: config.topic }]);
     return unsubscribe;
-  }, [config.topic, config.testMode, setConfig, setPrimitives]);
+  }, [context, config, setConfig, setPrimitives, setViewBox]);
+
 
   const renderGrid = useCallback(() => {
     if (!config.showGrid) return null;
@@ -278,10 +286,14 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     [config.namespaces]
   );
 
+  const shouldRenderPrimitive = (primitive: Primitive & { expiryTime: number }) => {
+    return config.namespaces[primitive.namespace || ""];
+  };
+
   useEffect(() => {
     if (!config.testMode) return;
     const intervalId = setInterval(() => {
-      const testData = createTestData(Date.now() * config.testSpeed);
+      const testData = createTestData(Date.now() * config.testSpeed, config.namespaces);
       const now = Date.now();
       setPrimitives((prevPrimitives) => {
         const updatedPrimitives = new Map(prevPrimitives);
@@ -295,7 +307,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
       });
     }, 16);
     return () => clearInterval(intervalId);
-  }, [config.testMode, config.testSpeed, setPrimitives]);
+  }, [config.testMode, config.testSpeed, config.namespaces, setPrimitives]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -348,7 +360,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
         }}
       >
         {config.showGrid && renderGrid()}
-        {Array.from(primitives.values()).map(renderPrimitive)}
+        {Array.from(primitives.values()).filter(shouldRenderPrimitive).map(renderPrimitive)}
       </svg>
     </div>
   );
