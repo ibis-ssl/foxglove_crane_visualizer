@@ -130,10 +130,10 @@ function buildSettingsTree(config: PanelConfig): SettingsTreeNodes {
       },
     }
   };
-  return {nodes};
+  return { nodes };
 }
 
-function RoboCupSSLVisualizer({ context }: { context: PanelExtensionContext }) {
+function CraneVisualizer({ context }: { context: PanelExtensionContext }) {
   const [primitives, setPrimitives] = useState<Map<number, Primitive & { expiryTime: number }>>(
     new Map()
   );
@@ -193,15 +193,15 @@ function RoboCupSSLVisualizer({ context }: { context: PanelExtensionContext }) {
             if (path === "general.showGrid") {
               const showGrid = typeof action.payload.value === "boolean" ? action.payload.value : config.showGrid;
               setConfig(prev => ({ ...prev, showGrid }));
-            }else if (path === "general.testMode") {
-              const testMode = typeof action.payload.value === "boolean"? action.payload.value : config.testMode;
+            } else if (path === "general.testMode") {
+              const testMode = typeof action.payload.value === "boolean" ? action.payload.value : config.testMode;
               setConfig(prev => ({ ...prev, testMode }));
-            }else if (path === "general.backgroundColor") {
+            } else if (path === "general.backgroundColor") {
               const backgroundColor = action.payload.value as string;
-              setConfig(prev => ({...prev, backgroundColor }));
-            }else if (path === "general.fieldColor") {
+              setConfig(prev => ({ ...prev, backgroundColor }));
+            } else if (path === "general.fieldColor") {
               const fieldColor = action.payload.value as string;
-              setConfig(prev => ({...prev, fieldColor }));
+              setConfig(prev => ({ ...prev, fieldColor }));
             }
             break;
         }
@@ -224,8 +224,8 @@ function RoboCupSSLVisualizer({ context }: { context: PanelExtensionContext }) {
         primitiveMsg.primitives.forEach(primitive => {
           updated.set(primitive.id, {
             ...primitive,
-            expiryTime: primitive.lifetime > 0 
-              ? now + primitive.lifetime * 1000 
+            expiryTime: primitive.lifetime > 0
+              ? now + primitive.lifetime * 1000
               : Infinity
           });
         });
@@ -286,13 +286,13 @@ function RoboCupSSLVisualizer({ context }: { context: PanelExtensionContext }) {
         />
       );
     }
-    
+
     return lines;
   }, [config.showGrid, config.gridSize]);
 
   const renderPrimitive = useCallback((primitive: Primitive & { expiryTime: number }) => {
     const { id, type, params, color, text } = primitive;
-    
+
     switch (type) {
       case 0: // CIRCLE
         return (
@@ -373,8 +373,8 @@ function RoboCupSSLVisualizer({ context }: { context: PanelExtensionContext }) {
         testData.forEach(primitive => {
           updated.set(primitive.id, {
             ...primitive,
-            expiryTime: primitive.lifetime > 0 
-              ? now + primitive.lifetime * 1000 
+            expiryTime: primitive.lifetime > 0
+              ? now + primitive.lifetime * 1000
               : Infinity
           });
         });
@@ -421,7 +421,7 @@ function RoboCupSSLVisualizer({ context }: { context: PanelExtensionContext }) {
 export function initPanel(context: PanelExtensionContext): () => void {
   ReactDOM.render(
     <StrictMode>
-      <RoboCupSSLVisualizer context={context} />
+      <CraneVisualizer context={context} />
     </StrictMode>,
     context.panelElement,
   );
