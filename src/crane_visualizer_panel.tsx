@@ -72,6 +72,8 @@ const createTestData = (time: number): Primitive[] => {
       params: [-450, -300, 900, 600],
       color: "rgba(255, 0, 0, 0.5)",
       text: "sduhdsasjhsdkjfdhsjkfhk",
+      namespace: "testNamespace1",
+      sub_namespace: "testSubNamespace1",
     },
     {
       id: 2,
@@ -79,6 +81,8 @@ const createTestData = (time: number): Primitive[] => {
       lifetime: 0.1,
       params: [200 * Math.cos(t), 200 * Math.sin(t), 15],
       color: "rgba(0, 0, 255, 0.5)",
+      namespace: "testNamespace2",
+      sub_namespace: "testSubNamespace2",
     },
   ];
 };
