@@ -1,18 +1,3 @@
-// import {
-//   PanelExtensionContext,
-//   ExtensionContext,
-//   SettingsTreeAction,
-//   SettingsTreeNode,
-//   SettingsTreeNodes,
-//   SettingsTreeChildren,
-//   Subscription,
-//   Topic,
-//   MessageEvent,
-//   SettingsTree,
-//   Immutable,
-//   RenderState
-// } from "@foxglove/studio";
-
 import * as React from "react";
 import { useCallback, useLayoutEffect, useState, useEffect } from "react";
 
