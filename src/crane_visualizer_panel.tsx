@@ -118,7 +118,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           label: "名前空間",
           fields: Object.fromEntries(
             Object.entries(config.namespaces).map(([namespace, visible]) => [
-              namespace,
+              namespace as string,
               { label: namespace, input: "boolean", value: visible, help: "名前空間の表示/非表示" },
             ])
           ),
@@ -169,16 +169,14 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
       setPrimitives((prevPrimitives) => {
         const updatedPrimitives = new Map(prevPrimitives);
         primitiveMsg.primitives.forEach((primitive) => {
-          if (primitive.namespace) {
-            if (!prevPrimitives.has(primitive.id)) {
-              setConfig((prevConfig) => ({
-                ...prevConfig,
-                namespaces: {
-                  ...prevConfig.namespaces,
-                  [primitive.namespace]: true,
-                },
-              }));
-            }
+          if (primitive.namespace && !prevPrimitives.has(primitive.id)) {
+            setConfig((prevConfig) => ({
+              ...prevConfig,
+              namespaces: {
+                ...prevConfig.namespaces,
+                [primitive.namespace as string]: true,
+              },
+            }));
           }
           updatedPrimitives.set(primitive.id, {
             ...primitive,
