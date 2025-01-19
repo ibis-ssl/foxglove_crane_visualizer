@@ -27,7 +27,8 @@ Extensions are packaged into `.foxe` files. These files contain the metadata (pa
 Before packaging, make sure to set `name`, `publisher`, `version`, and `description` fields in _package.json_. When ready to distribute the extension, run:
 
 ```sh
-npm run package
+npm run foxglove:run
+npm run foxglove:package
 ```
 
 This command will package the extension into a `.foxe` file in the local directory.
