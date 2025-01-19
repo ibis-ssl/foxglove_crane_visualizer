@@ -9,23 +9,16 @@ import {
 import ReactDOM from "react-dom";
 import { StrictMode } from "react";
 
-interface Primitive {
+interface SvgPrimitive {
   id: number;
-  type: number;
   lifetime: number;
-  params: number[];
-  color: string;
-  text?: string;
+  svg_text: string;
   namespace?: string;
   sub_namespace?: string;
 }
 
-interface PrimitiveArray {
-  header: {
-    stamp: { sec: number; nsec: number };
-    frame_id: string;
-  };
-  primitives: Primitive[];
+interface SvgPrimitiveArray {
+  primitives: SvgPrimitive[];
 }
 
 interface PanelConfig {
@@ -70,18 +63,17 @@ const defaultConfig: PanelConfig = {
 
 const createTestData = (time: number, namespaces: PanelConfig["namespaces"]) => {
   const t = time * 0.001;
-  const primitives: Primitive[] = [];
+  const primitives: SvgPrimitive[] = [];
   const addPrimitives = (ns: PanelConfig["namespaces"], path: string[] = []) => {
     for (const [name, { visible, children }] of Object.entries(ns)) {
       if (!visible) continue;
       const namespace = path.concat(name).join(".");
       const subNamespace = children ? Object.keys(children)[0] : undefined;
+      // Primitive の代わりに SvgPrimitive を生成
       primitives.push({
         id: primitives.length + 1,
-        type: Math.floor(Math.random() * 5),
         lifetime: Math.random() * 1,
-        params: [Math.random() * 1000 - 500, Math.random() * 600 - 300, Math.random() * 100],
-        color: `rgba(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255}, 0.5)`,
+        svg_text: `<circle cx="${Math.random() * 1000 - 500}" cy="${Math.random() * 600 - 300}" r="${Math.random() * 100}" fill="rgba(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255}, 0.5)" />`,
         namespace: namespace,
         sub_namespace: subNamespace,
       });
@@ -95,7 +87,7 @@ const createTestData = (time: number, namespaces: PanelConfig["namespaces"]) => 
 };
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
-  const [primitives, setPrimitives] = useState<Map<number, Primitive & { expiryTime: number }>>(
+  const [primitives, setPrimitives] = useState<Map<number, SvgPrimitive & { expiryTime: number }>>(
     new Map()
   );
   const [viewBox, setViewBox] = useState("-450 -300 900 600");
@@ -158,11 +150,11 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
 
     updatePanelSettings();
     const handleMessage: MessageHandler = (event: MessageEvent) => {
-      const primitiveMsg = event.message as PrimitiveArray;
+      const primitiveMsg = event.message as SvgPrimitiveArray;
       const now = Date.now();
       setPrimitives((prevPrimitives) => {
         const updatedPrimitives = new Map(prevPrimitives);
-        primitiveMsg.primitives.forEach((primitive) => {
+        primitiveMsg.primitives.forEach((primitive: SvgPrimitive) => {
           const namespacePath = primitive.namespace ? [primitive.namespace] : [];
           if (primitive.sub_namespace) {
             namespacePath.push(primitive.sub_namespace);
@@ -234,52 +226,12 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   }, [config.showGrid, config.gridSize]);
 
   const renderPrimitive = useCallback(
-    (primitive: Primitive & { expiryTime: number } | null): JSX.Element | null => {
+    (primitive: SvgPrimitive & { expiryTime: number } | null): JSX.Element | null => {
       if (!primitive) return null;
-      const { id, type, params, color, text } = primitive;
-      switch (type) {
-        case 0: // CIRCLE
-          return <circle key={id} cx={params[0]} cy={params[1]} r={params[2]} fill={color} />;
-        case 1: // LINE
-          return (
-            <line
-              key={id}
-              x1={params[0]}
-              y1={params[1]}
-              x2={params[2]}
-              y2={params[3]}
-              stroke={color}
-              strokeWidth={2}
-            />
-          );
-        case 2: // RECTANGLE
-          return (
-            <rect
-              key={id}
-              x={params[0]}
-              y={params[1]}
-              width={params[2]}
-              height={params[3]}
-              stroke={color}
-              fill="none"
-              strokeWidth={2}
-            />
-          );
-        case 3: // TEXT
-          return <text key={id} x={params[0]} y={params[1]} fill={color} fontSize={12}>
-            {text}
-          </text>;
-        case 4: // POLYGON
-          const points = [];
-          for (let i = 0; i < params.length; i += 2) {
-            points.push(`${params[i]},${params[i + 1]}`);
-          }
-          return <polygon key={id} points={points.join(" ")} fill={color} />;
-        default:
-          return null;
-      }
+      const { id, svg_text } = primitive;
+      return <g key={id} dangerouslySetInnerHTML={{ __html: svg_text }} />;
     },
-    [config.namespaces]
+    []
   );
 
   const createNamespaceFields = (namespaces: PanelConfig["namespaces"]) => {
@@ -303,7 +255,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     return fields;
   };
 
-  const shouldRenderPrimitive = (primitive: Primitive & { expiryTime: number }) => {
+  const shouldRenderPrimitive = (primitive: SvgPrimitive & { expiryTime: number }) => {
     const namespacePath = primitive.namespace ? [primitive.namespace] : [];
     if (primitive.sub_namespace) {
       namespacePath.push(primitive.sub_namespace);
