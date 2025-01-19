@@ -354,9 +354,11 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           const scale = e.deltaY > 0 ? 0.9 : 1.1;
           const newWidth = width * scale;
           const newHeight = height * scale;
-          const offsetX = (width - newWidth) / 2;
-          const offsetY = (height - newHeight) / 2;
-          setViewBox(`${x + offsetX} ${y + offsetY} ${newWidth} ${newHeight}`);
+          const centerX = x + width / 2;
+          const centerY = y + height / 2;
+          const newX = centerX - newWidth / 2;
+          const newY = centerY - newHeight / 2;
+          setViewBox(`${newX} ${newY} ${newWidth} ${newHeight}`);
         }}
       >
         {config.showGrid && renderGrid()}
