@@ -3,8 +3,6 @@ import { useCallback, useLayoutEffect, useState, useEffect } from "react";
 import {
   PanelExtensionContext,
   SettingsTree,
-  SettingsTreeNode,
-  SettingsTreeNodes,
   SettingsTreeAction,
   SettingsTreeField,
 } from "@foxglove/studio";
@@ -39,7 +37,12 @@ interface PanelConfig {
   testMode: boolean;
   testSpeed: number;
   message: string;
-  namespaces: { [key: string]: boolean };
+  namespaces: {
+    [key: string]: {
+      visible: boolean;
+      children?: { [key: string]: { visible: boolean; children?: any } };
+    };
+  };
 }
 
 type MessageEvent = {
@@ -60,37 +63,34 @@ const defaultConfig: PanelConfig = {
   testSpeed: 1,
   message: "",
   namespaces: {
-    testNamespace1: true,
-    testNamespace2: true,
+    testNamespace1: { visible: true, children: { testSubNamespace1: { visible: true } } },
+    testNamespace2: { visible: true, children: { testSubNamespace2: { visible: true } } },
   },
 };
 
-const createTestData = (time: number, namespaces: { [key: string]: boolean }): Primitive[] => {
+const createTestData = (time: number, namespaces: PanelConfig["namespaces"]) => {
   const t = time * 0.001;
   const primitives: Primitive[] = [];
-  if (namespaces["testNamespace1"]) {
-    primitives.push({
-      id: 1,
-      type: 2,
-      lifetime: 0,
-      params: [-450, -300, 900, 600],
-      color: "rgba(255, 0, 0, 0.5)",
-      text: "sduhdsasjhsdkjfdhsjkfhk",
-      namespace: "testNamespace1",
-      sub_namespace: "testSubNamespace1",
-    });
-  }
-  if (namespaces["testNamespace2"]) {
-    primitives.push({
-      id: 2,
-      type: 0,
-      lifetime: 0.1,
-      params: [200 * Math.cos(t), 200 * Math.sin(t), 15],
-      color: "rgba(0, 0, 255, 0.5)",
-      namespace: "testNamespace2",
-      sub_namespace: "testSubNamespace2",
-    });
-  }
+  const addPrimitives = (ns: PanelConfig["namespaces"], path: string[] = []) => {
+    for (const [name, { visible, children }] of Object.entries(ns)) {
+      if (!visible) continue;
+      const namespace = path.concat(name).join(".");
+      const subNamespace = children ? Object.keys(children)[0] : undefined;
+      primitives.push({
+        id: primitives.length + 1,
+        type: Math.floor(Math.random() * 5),
+        lifetime: Math.random() * 1,
+        params: [Math.random() * 1000 - 500, Math.random() * 600 - 300, Math.random() * 100],
+        color: `rgba(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255}, 0.5)`,
+        namespace: namespace,
+        sub_namespace: subNamespace,
+      });
+      if (children) {
+        addPrimitives(children, path.concat(name));
+      }
+    }
+  };
+  addPrimitives(namespaces);
   return primitives;
 };
 
@@ -108,7 +108,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   useLayoutEffect(() => {
     const savedConfig = context.initialState as PanelConfig | undefined;
     if (savedConfig) {
-      setConfig(savedConfig);
+      setConfig((prevConfig) => ({ ...prevConfig, ...savedConfig, namespaces: savedConfig.namespaces || prevConfig.namespaces }));
     }
   }, [context, setConfig]);
 
@@ -128,12 +128,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           },
           namespaces: {
             label: "名前空間",
-            fields: Object.fromEntries(
-              Object.entries(config.namespaces).map(([namespace, visible]) => [
-                namespace as string,
-                { label: namespace, input: "boolean", value: visible, help: "名前空間の表示/非表示" },
-              ])
-            ),
+            fields: createNamespaceFields(config.namespaces),
           },
         },
         actionHandler: (action: SettingsTreeAction) => {
@@ -141,28 +136,16 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           switch (action.action) {
             case "update":
               setConfig((prevConfig) => {
-                switch (path) {
-                  case "general.showGrid":
-                    return { ...prevConfig, showGrid: action.payload.value as boolean };
-                  case "general.testMode":
-                    return { ...prevConfig, testMode: action.payload.value as boolean };
-                  case "general.backgroundColor":
-                    return { ...prevConfig, backgroundColor: action.payload.value as string };
-                  case "general.fieldColor":
-                    return { ...prevConfig, fieldColor: action.payload.value as string };
-                  default:
-                    if (path.startsWith("namespaces.")) {
-                      const [namespace] = path.split(".").slice(1);
-                      return {
-                        ...prevConfig,
-                        namespaces: {
-                          ...prevConfig.namespaces,
-                          [namespace]: action.payload.value as boolean,
-                        },
-                      };
-                    }
-                    return prevConfig;
+                const newConfig = { ...prevConfig };
+                const pathParts = path.split(".");
+                const namespacePath = pathParts.slice(1, -1);
+                const leafNamespace = pathParts[pathParts.length - 1];
+                let currentNs = newConfig.namespaces;
+                for (const ns of namespacePath) {
+                  currentNs = currentNs[ns].children || {};
                 }
+                currentNs[leafNamespace].visible = action.payload.value as boolean;
+                return newConfig;
               });
               break;
             case "perform-node-action":
@@ -180,14 +163,27 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
       setPrimitives((prevPrimitives) => {
         const updatedPrimitives = new Map(prevPrimitives);
         primitiveMsg.primitives.forEach((primitive) => {
-          if (primitive.namespace && !prevPrimitives.has(primitive.id)) {
-            setConfig((prevConfig) => ({
-              ...prevConfig,
-              namespaces: {
-                ...prevConfig.namespaces,
-                [primitive.namespace as string]: true,
-              },
-            }));
+          const namespacePath = primitive.namespace ? [primitive.namespace] : [];
+          if (primitive.sub_namespace) {
+            namespacePath.push(primitive.sub_namespace);
+          }
+          let currentNs = config.namespaces;
+          let visible = true;
+          for (const ns of namespacePath) {
+            if (!currentNs[ns] || !currentNs[ns].visible) {
+              visible = false;
+              break;
+            }
+            currentNs = currentNs[ns].children || {};
+          }
+          if (visible && !prevPrimitives.has(primitive.id)) {
+            const newConfig = { ...config };
+            let currentNs = newConfig.namespaces;
+            for (let i = 0; i < namespacePath.length - 1; i++) {
+              currentNs = currentNs[namespacePath[i]].children!;
+            }
+            currentNs[namespacePath[namespacePath.length - 1]].visible = true;
+            setConfig(newConfig);
           }
           updatedPrimitives.set(primitive.id, {
             ...primitive,
@@ -199,7 +195,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     };
     const unsubscribe = context.subscribe([{ topic: config.topic }]);
     return unsubscribe;
-  }, [context, config, setConfig, setPrimitives, setViewBox]);
+  }, [context, config, setConfig, setPrimitives]);
 
 
   const renderGrid = useCallback(() => {
@@ -286,35 +282,68 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     [config.namespaces]
   );
 
+  const createNamespaceFields = (namespaces: PanelConfig["namespaces"]) => {
+    const fields: { [key: string]: SettingsTreeField } = {};
+    const addFieldsRecursive = (ns: { [key: string]: any }, path: string[] = []) => {
+      for (const [name, { visible, children }] of Object.entries(ns)) {
+        const currentPath = [...path, name];
+        const key = currentPath.join(".");
+        fields[key] = {
+          label: name,
+          input: "boolean",
+          value: visible,
+          help: "名前空間の表示/非表示",
+        };
+        if (children) {
+          addFieldsRecursive(children, currentPath);
+        }
+      }
+    };
+    addFieldsRecursive(namespaces);
+    return fields;
+  };
+
   const shouldRenderPrimitive = (primitive: Primitive & { expiryTime: number }) => {
-    return config.namespaces[primitive.namespace || ""];
+    const namespacePath = primitive.namespace ? [primitive.namespace] : [];
+    if (primitive.sub_namespace) {
+      namespacePath.push(primitive.sub_namespace);
+    }
+    let visible = true;
+    let currentNs = config.namespaces;
+    for (const ns of namespacePath) {
+      if (!currentNs[ns] || !currentNs[ns].visible) {
+        visible = false;
+        break;
+      }
+      currentNs = currentNs[ns].children || {};
+    }
+    return visible;
   };
 
   useEffect(() => {
     if (!config.testMode) return;
     const intervalId = setInterval(() => {
       const testData = createTestData(Date.now() * config.testSpeed, config.namespaces);
-      const now = Date.now();
       setPrimitives((prevPrimitives) => {
         const updatedPrimitives = new Map(prevPrimitives);
         testData.forEach((primitive) => {
           updatedPrimitives.set(primitive.id, {
             ...primitive,
-            expiryTime: primitive.lifetime > 0 ? now + primitive.lifetime * 1000 : Infinity,
+            expiryTime: primitive.lifetime > 0 ? Date.now() + primitive.lifetime * 1000 : Infinity,
           });
         });
         return updatedPrimitives;
       });
     }, 16);
     return () => clearInterval(intervalId);
-  }, [config.testMode, config.testSpeed, config.namespaces, setPrimitives]);
+  }, [config.testMode, config.testSpeed, config.namespaces]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
       const now = Date.now();
       setPrimitives((prevPrimitives) => {
         const updatedPrimitives = new Map(prevPrimitives);
-        for (const [id, primitive] of updatedPrimitives) {
+        for (const [id, primitive] of prevPrimitives) {
           if (primitive.expiryTime <= now) {
             updatedPrimitives.delete(id);
           }
@@ -323,7 +352,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
       });
     }, 100);
     return () => clearInterval(intervalId);
-  }, [setPrimitives]);
+  }, []);
 
   return (
     <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
@@ -362,7 +391,9 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
         }}
       >
         {config.showGrid && renderGrid()}
-        {Array.from(primitives.values()).filter(shouldRenderPrimitive).map(renderPrimitive)}
+        {Array.from(primitives.entries()).filter(([k, v]) => shouldRenderPrimitive(v)).map(([k, v]) =>
+          renderPrimitive(v)
+        )}
       </svg>
     </div>
   );
