@@ -5,7 +5,7 @@ import {
   SettingsTree,
   SettingsTreeAction,
   SettingsTreeField,
-  MessageEvent as FoxgloveMessageEvent,
+  MessageEvent,
   Topic,
   Immutable
 } from "@foxglove/studio";
@@ -15,11 +15,11 @@ import { StrictMode } from "react";
 interface SvgPrimitive {
   id: number;
   lifetime: number;
-  svg_text: string;
-  primitive_namespace: string;
+  svg_text: string; // SVG要素を表すテキスト
 }
 
 interface SvgPrimitiveArray {
+  layer: string; // "parent/child1/child2"のような階層パス
   primitives: SvgPrimitive[];
 }
 
@@ -50,6 +50,58 @@ const defaultConfig: PanelConfig = {
   namespaces: {},
 };
 
+interface Layer {
+  name: string; // レイヤー名
+  primitives: SvgPrimitive[]; // SVGプリミティブ
+  children: Record<string, Layer>; // 子レイヤー
+}
+
+const parseLayerPath = (path: string): string[] => path.split("/");
+
+const updateLayerTree = (
+  tree: Record<string, Layer>,
+  path: string[],
+  newLayer: SvgPrimitive[]
+): Record<string, Layer> => {
+  if (path.length === 0) return tree;
+
+  const [current, ...rest] = path;
+  if (rest.length === 0) {
+    // 末端のレイヤーを上書き
+    return {
+      ...tree,
+      [current]: {
+        name: current,
+        primitives: newLayer,
+        children: {},
+      },
+    };
+  }
+
+  return {
+    ...tree,
+    [current]: {
+      name: current,
+      primitives: tree[current]?.primitives || [],
+      children: updateLayerTree(tree[current]?.children || {}, rest, newLayer),
+    },
+  };
+};
+
+const renderLayer = (layer: Layer): React.ReactNode => (
+  <g key={layer.name}>
+    {/* SVGプリミティブの描画 */}
+    {layer.primitives.map((primitive) => (
+      <g
+        key={primitive.id}
+        dangerouslySetInnerHTML={{ __html: primitive.svg_text }}
+      />
+    ))}
+    {/* 子レイヤーの再帰描画 */}
+    {Object.values(layer.children).map((child) => renderLayer(child))}
+  </g>
+);
+
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
   const [primitives, setPrimitives] = useState<Map<number, SvgPrimitive & { expiryTime: number }>>(
     new Map()
@@ -60,6 +112,14 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
 
   const [svgArrayMessage, setSvgArrayMessage] = useState<SvgPrimitiveArray | undefined>();
+
+  const [layerTree, setLayerTree] = useState<Record<string, Layer>>({});
+  const handleSvgPrimitiveArray = (data: SvgPrimitiveArray) => {
+    const path = parseLayerPath(data.layer);
+    setLayerTree((prevTree) =>
+      updateLayerTree(prevTree, path, data.primitives)
+    );
+  };
 
   const svgTopics = useMemo(
     () => (topics ?? []).filter((topic) => topic.schemaName === "crane_visualization_interfaces/msg/SvgPrimitiveArray"),
@@ -134,7 +194,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     let unsubscribe;
     const handleMessage: MessageHandler = (event: MessageEvent) => {
       const message = `Received message on topic '${event.topic}': ${JSON.stringify(event.message)}`;
-      handleLogMessage(message);
       if (typeof event.message === 'object' && event.message !== null && 'primitives' in event.message) {
         const primitiveMsg = event.message as SvgPrimitiveArray;
         const now = Date.now();
@@ -320,9 +379,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
         }}
       >
         {config.showGrid && renderGrid()}
-        {Array.from(primitives.entries())
-          .filter(([k, v]) => shouldRenderPrimitive(v))
-          .map(([key, value]) => renderPrimitive(value)) as JSX.Element[]}
+        {Object.values(layerTree).map((layer) => renderLayer(layer))}
       </svg>
     </div>
   );
