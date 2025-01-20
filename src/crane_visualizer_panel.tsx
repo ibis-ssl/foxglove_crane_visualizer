@@ -1,10 +1,13 @@
 import * as React from "react";
-import { useCallback, useLayoutEffect, useState, useEffect } from "react";
+import { useCallback, useLayoutEffect, useState, useEffect, useMemo } from "react";
 import {
   PanelExtensionContext,
   SettingsTree,
   SettingsTreeAction,
   SettingsTreeField,
+  MessageEvent as FoxgloveMessageEvent,
+  Topic,
+  Immutable
 } from "@foxglove/studio";
 import ReactDOM from "react-dom";
 import { StrictMode } from "react";
@@ -44,39 +47,14 @@ type MessageEvent = {
 type MessageHandler = (event: MessageEvent) => void;
 
 const defaultConfig: PanelConfig = {
-  topic: "/visualization/primitives",
+  topic: "/visualizer_svgs",
   backgroundColor: "#FFFFFF",
   fieldColor: "#00FF00",
   showGrid: true,
   gridSize: 100,
   message: "",
-  namespaces: {
-  },
+  namespaces: {},
 };
-
-// const createTestData = (time: number, namespaces: PanelConfig["namespaces"]) => {
-//   const t = time * 0.001;
-//   const primitives: SvgPrimitive[] = [];
-//   const addPrimitives = (ns: PanelConfig["namespaces"], path: string[] = []) => {
-//     for (const [name, { visible, children }] of Object.entries(ns)) {
-//       if (!visible) continue;
-//       const namespace = path.concat(name).join(".");
-//       const subNamespace = children ? Object.keys(children)[0] : undefined;
-//       // Primitive の代わりに SvgPrimitive を生成
-//       primitives.push({
-//         id: primitives.length + 1,
-//         lifetime: Math.random() * 1,
-//         svg_text: `<circle cx="${Math.random() * 1000 - 500}" cy="${Math.random() * 600 - 300}" r="${Math.random() * 100}" fill="rgba(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255}, 0.5)" />`,
-//         primitive_namespace: namespace,
-//       });
-//       if (children) {
-//         addPrimitives(children, path.concat(name));
-//       }
-//     }
-//   };
-//   addPrimitives(namespaces);
-//   return primitives;
-// };
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
   const [primitives, setPrimitives] = useState<Map<number, SvgPrimitive & { expiryTime: number }>>(
@@ -84,6 +62,34 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   );
   const [viewBox, setViewBox] = useState("-450 -300 900 600");
   const [config, setConfig] = useState<PanelConfig>(defaultConfig);
+  const [logMessages, setLogMessages] = useState<string[]>([]);
+  // const [message, setMessage] = useState<FoxgloveMessageEvent<unknown> | undefined>();
+  // const [topics, setTopics] = useState<readonly Topic[]>([]);
+  // const [renderDone, setRenderDone] = useState<RenderDone>();
+  const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
+  const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
+  const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
+
+  const [svgArrayMessage, setSvgArrayMessage] = useState<SvgPrimitiveArray | undefined>();
+
+  const svgTopics = useMemo(
+    () => (topics ?? []).filter((topic) => topic.schemaName === "crane_visualization_interfaces/msg/SvgPrimitiveArray"),
+    [topics],
+  );
+
+  useEffect(() => {
+    context.saveState({ topic: config });
+    let topicsList = [];
+
+    if (config.topic) {
+      topicsList.push({ topic: config.topic });
+    }
+    context.subscribe(topicsList);
+  }, [context, config]);
+
+  const handleLogMessage = useCallback((message: string) => {
+    setLogMessages((prevMessages) => [...prevMessages, message]);
+  }, []);
 
   useLayoutEffect(() => {
     context.saveState(config);
@@ -140,43 +146,51 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     };
 
     updatePanelSettings();
+    let unsubscribe;
     const handleMessage: MessageHandler = (event: MessageEvent) => {
-      const primitiveMsg = event.message as SvgPrimitiveArray;
-      const now = Date.now();
-      setPrimitives((prevPrimitives) => {
-        const updatedPrimitives = new Map(prevPrimitives);
-        primitiveMsg.primitives.forEach((primitive: SvgPrimitive) => {
-          const namespacePath = primitive.primitive_namespace.split("/");
-          let currentNs = config.namespaces;
-          let visible = true;
-          for (const ns of namespacePath) {
-            if (!currentNs[ns] || !currentNs[ns].visible) {
-              visible = false;
-              break;
+      const message = `Received message on topic '${event.topic}': ${JSON.stringify(event.message)}`;
+      handleLogMessage(message);
+      if (typeof event.message === 'object' && event.message !== null && 'primitives' in event.message) {
+        const primitiveMsg = event.message as SvgPrimitiveArray;
+        const now = Date.now();
+        setPrimitives((prevPrimitives) => {
+          const updatedPrimitives = new Map(prevPrimitives);
+          primitiveMsg.primitives.forEach((primitive: SvgPrimitive) => {
+            const namespacePath = primitive.primitive_namespace.split("/");
+            let currentNs = config.namespaces;
+            let visible = true;
+            for (const ns of namespacePath) {
+              if (!currentNs[ns] || !currentNs[ns].visible) {
+                visible = false;
+                break;
+              }
+              currentNs = currentNs[ns].children || {};
             }
-            currentNs = currentNs[ns].children || {};
-          }
-          if (visible && !prevPrimitives.has(primitive.id)) {
-            const newConfig = { ...config };
-            let currentNs = newConfig.namespaces;
-            for (let i = 0; i < namespacePath.length - 1; i++) {
-              currentNs = currentNs[namespacePath[i]].children!;
+            if (visible && !prevPrimitives.has(primitive.id)) {
+              const newConfig = { ...config };
+              let currentNs = newConfig.namespaces;
+              for (let i = 0; i < namespacePath.length - 1; i++) {
+                currentNs = currentNs[namespacePath[i]].children!;
+              }
+              currentNs[namespacePath[namespacePath.length - 1]].visible = true;
+              setConfig(newConfig);
             }
-            currentNs[namespacePath[namespacePath.length - 1]].visible = true;
-            setConfig(newConfig);
-          }
-          updatedPrimitives.set(primitive.id, {
-            ...primitive,
-            expiryTime: primitive.lifetime > 0 ? now + primitive.lifetime * 1000 : Infinity,
+            updatedPrimitives.set(primitive.id, {
+              ...primitive,
+              expiryTime: primitive.lifetime > 0 ? now + primitive.lifetime * 1000 : Infinity,
+            });
           });
+          return updatedPrimitives;
         });
-        return updatedPrimitives;
-      });
+      } else {
+        handleLogMessage(`Received message is not a SvgPrimitiveArray: ${JSON.stringify(event.message)}`);
+      }
     };
-    const unsubscribe = context.subscribe([{ topic: config.topic }]);
-    return unsubscribe;
-  }, [context, config, setConfig, setPrimitives]);
-
+    unsubscribe = context.subscribe([{ topic: config.topic }]);
+    return () => {
+      // unsubscribe は void を返す可能性があるため、この行は削除します。
+    };
+  }, [context, config, setConfig, setPrimitives, setLogMessages, handleLogMessage]);
 
   const renderGrid = useCallback(() => {
     if (!config.showGrid) return null;
@@ -249,7 +263,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     let currentNs = config.namespaces;
     for (const ns of namespacePath) {
       if (!currentNs[ns] || !currentNs[ns].visible) {
-        visible = false;
+        // visible = false;
         break;
       }
       currentNs = currentNs[ns].children || {};
@@ -273,8 +287,55 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     return () => clearInterval(intervalId);
   }, []);
 
+  useLayoutEffect(() => {
+    context.onRender = (renderState, done) => {
+      setRenderDone(() => done);
+
+      setMessages(renderState.currentFrame);
+      setTopics(renderState.topics);
+    };
+
+    context.watch("topics");
+    context.watch("currentFrame");
+
+  }, [context]);
+
+  useEffect(() => {
+    if (messages) {
+      for (const message of messages) {
+        if (message.topic === config.topic) {
+          setSvgArrayMessage(message.message as SvgPrimitiveArray);
+          // setLogMessages((prevMessages) => [...prevMessages, `Received message on topic '${message.topic}'`]);
+          const now = Date.now();
+          setPrimitives((prevPrimitives) => {
+            const updatedPrimitives = new Map(prevPrimitives);
+            for (const [id, primitive] of prevPrimitives) {
+              if (primitive.expiryTime <= now) {
+                updatedPrimitives.delete(id);
+              }
+            }
+            return updatedPrimitives;
+          });
+        }
+      }
+    }
+  }, [messages]);
+
+  // invoke the done callback once the render is complete
+  useEffect(() => {
+    renderDone?.();
+  }, [renderDone]);
+
   return (
     <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
+      <div>
+        <p>Topic: {config.topic}</p>
+        <ul>
+          {logMessages.map((message, index) => (
+            <li key={index}>{message}</li>
+          ))}
+        </ul>
+      </div>
       <svg
         width="100%"
         height="100%"
@@ -310,9 +371,9 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
         }}
       >
         {config.showGrid && renderGrid()}
-        {Array.from(primitives.entries()).filter(([k, v]) => shouldRenderPrimitive(v)).map(([k, v]) =>
-          renderPrimitive(v)
-        )}
+        {Array.from(primitives.entries())
+          .filter(([k, v]) => shouldRenderPrimitive(v))
+          .map(([key, value]) => renderPrimitive(value)) as JSX.Element[]}
       </svg>
     </div>
   );
