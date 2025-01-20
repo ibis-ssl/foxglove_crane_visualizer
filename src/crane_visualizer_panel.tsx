@@ -13,8 +13,7 @@ interface SvgPrimitive {
   id: number;
   lifetime: number;
   svg_text: string;
-  namespace?: string;
-  sub_namespace?: string;
+  primitive_namespace: string;
 }
 
 interface SvgPrimitiveArray {
@@ -27,8 +26,6 @@ interface PanelConfig {
   fieldColor: string;
   showGrid: boolean;
   gridSize: number;
-  testMode: boolean;
-  testSpeed: number;
   message: string;
   namespaces: {
     [key: string]: {
@@ -52,39 +49,34 @@ const defaultConfig: PanelConfig = {
   fieldColor: "#00FF00",
   showGrid: true,
   gridSize: 100,
-  testMode: true,
-  testSpeed: 1,
   message: "",
   namespaces: {
-    testNamespace1: { visible: true, children: { testSubNamespace1: { visible: true } } },
-    testNamespace2: { visible: true, children: { testSubNamespace2: { visible: true } } },
   },
 };
 
-const createTestData = (time: number, namespaces: PanelConfig["namespaces"]) => {
-  const t = time * 0.001;
-  const primitives: SvgPrimitive[] = [];
-  const addPrimitives = (ns: PanelConfig["namespaces"], path: string[] = []) => {
-    for (const [name, { visible, children }] of Object.entries(ns)) {
-      if (!visible) continue;
-      const namespace = path.concat(name).join(".");
-      const subNamespace = children ? Object.keys(children)[0] : undefined;
-      // Primitive の代わりに SvgPrimitive を生成
-      primitives.push({
-        id: primitives.length + 1,
-        lifetime: Math.random() * 1,
-        svg_text: `<circle cx="${Math.random() * 1000 - 500}" cy="${Math.random() * 600 - 300}" r="${Math.random() * 100}" fill="rgba(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255}, 0.5)" />`,
-        namespace: namespace,
-        sub_namespace: subNamespace,
-      });
-      if (children) {
-        addPrimitives(children, path.concat(name));
-      }
-    }
-  };
-  addPrimitives(namespaces);
-  return primitives;
-};
+// const createTestData = (time: number, namespaces: PanelConfig["namespaces"]) => {
+//   const t = time * 0.001;
+//   const primitives: SvgPrimitive[] = [];
+//   const addPrimitives = (ns: PanelConfig["namespaces"], path: string[] = []) => {
+//     for (const [name, { visible, children }] of Object.entries(ns)) {
+//       if (!visible) continue;
+//       const namespace = path.concat(name).join(".");
+//       const subNamespace = children ? Object.keys(children)[0] : undefined;
+//       // Primitive の代わりに SvgPrimitive を生成
+//       primitives.push({
+//         id: primitives.length + 1,
+//         lifetime: Math.random() * 1,
+//         svg_text: `<circle cx="${Math.random() * 1000 - 500}" cy="${Math.random() * 600 - 300}" r="${Math.random() * 100}" fill="rgba(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255}, 0.5)" />`,
+//         primitive_namespace: namespace,
+//       });
+//       if (children) {
+//         addPrimitives(children, path.concat(name));
+//       }
+//     }
+//   };
+//   addPrimitives(namespaces);
+//   return primitives;
+// };
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
   const [primitives, setPrimitives] = useState<Map<number, SvgPrimitive & { expiryTime: number }>>(
@@ -113,7 +105,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
             fields: {
               topic: { label: "トピック名", input: "string", value: config.topic },
               showGrid: { label: "グリッド表示", input: "boolean", value: config.showGrid },
-              testMode: { label: "テストモード", input: "boolean", value: config.testMode },
               backgroundColor: { label: "背景色", input: "rgba", value: config.backgroundColor },
               fieldColor: { label: "フィールド色", input: "rgba", value: config.fieldColor },
             },
@@ -155,10 +146,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
       setPrimitives((prevPrimitives) => {
         const updatedPrimitives = new Map(prevPrimitives);
         primitiveMsg.primitives.forEach((primitive: SvgPrimitive) => {
-          const namespacePath = primitive.namespace ? [primitive.namespace] : [];
-          if (primitive.sub_namespace) {
-            namespacePath.push(primitive.sub_namespace);
-          }
+          const namespacePath = primitive.primitive_namespace.split("/");
           let currentNs = config.namespaces;
           let visible = true;
           for (const ns of namespacePath) {
@@ -256,10 +244,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   };
 
   const shouldRenderPrimitive = (primitive: SvgPrimitive & { expiryTime: number }) => {
-    const namespacePath = primitive.namespace ? [primitive.namespace] : [];
-    if (primitive.sub_namespace) {
-      namespacePath.push(primitive.sub_namespace);
-    }
+    const namespacePath = primitive.primitive_namespace.split("/");
     let visible = true;
     let currentNs = config.namespaces;
     for (const ns of namespacePath) {
@@ -271,24 +256,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     }
     return visible;
   };
-
-  useEffect(() => {
-    if (!config.testMode) return;
-    const intervalId = setInterval(() => {
-      const testData = createTestData(Date.now() * config.testSpeed, config.namespaces);
-      setPrimitives((prevPrimitives) => {
-        const updatedPrimitives = new Map(prevPrimitives);
-        testData.forEach((primitive) => {
-          updatedPrimitives.set(primitive.id, {
-            ...primitive,
-            expiryTime: primitive.lifetime > 0 ? Date.now() + primitive.lifetime * 1000 : Infinity,
-          });
-        });
-        return updatedPrimitives;
-      });
-    }, 16);
-    return () => clearInterval(intervalId);
-  }, [config.testMode, config.testSpeed, config.namespaces]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
