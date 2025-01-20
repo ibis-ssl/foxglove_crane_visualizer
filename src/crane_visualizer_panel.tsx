@@ -126,16 +126,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     [topics],
   );
 
-  useEffect(() => {
-    context.saveState({ topic: config });
-    let topicsList = [];
-
-    if (config.topic) {
-      topicsList.push({ topic: config.topic });
-    }
-    context.subscribe(topicsList);
-  }, [context, config]);
-
   useLayoutEffect(() => {
     context.saveState(config);
   }, [config, context]);
@@ -192,42 +182,11 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
 
     updatePanelSettings();
     let unsubscribe;
-    const handleMessage: MessageHandler = (event: MessageEvent) => {
-      const message = `Received message on topic '${event.topic}': ${JSON.stringify(event.message)}`;
-      if (typeof event.message === 'object' && event.message !== null && 'primitives' in event.message) {
-        const primitiveMsg = event.message as SvgPrimitiveArray;
-        const now = Date.now();
-        setPrimitives((prevPrimitives) => {
-          const updatedPrimitives = new Map(prevPrimitives);
-          primitiveMsg.primitives.forEach((primitive: SvgPrimitive) => {
-            const namespacePath = primitive.primitive_namespace.split("/");
-            let currentNs = config.namespaces;
-            let visible = true;
-            for (const ns of namespacePath) {
-              if (!currentNs[ns] || !currentNs[ns].visible) {
-                visible = false;
-                break;
-              }
-              currentNs = currentNs[ns].children || {};
-            }
-            if (visible && !prevPrimitives.has(primitive.id)) {
-              const newConfig = { ...config };
-              let currentNs = newConfig.namespaces;
-              for (let i = 0; i < namespacePath.length - 1; i++) {
-                currentNs = currentNs[namespacePath[i]].children!;
-              }
-              currentNs[namespacePath[namespacePath.length - 1]].visible = true;
-              setConfig(newConfig);
-            }
-            updatedPrimitives.set(primitive.id, {
-              ...primitive,
-              expiryTime: primitive.lifetime > 0 ? now + primitive.lifetime * 1000 : Infinity,
-            });
-          });
-          return updatedPrimitives;
-        });
-      }
-    };
+      const handleMessage: MessageHandler = (event: MessageEvent) => {
+        if (typeof event.message === 'object' && event.message !== null && 'primitives' in event.message) {
+          handleSvgPrimitiveArray(event.message as SvgPrimitiveArray);
+        }
+      };
     unsubscribe = context.subscribe([{ topic: config.topic }]);
     return () => {
       // unsubscribe は void を返す可能性があるため、この行は削除します。
@@ -291,23 +250,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   };
 
 
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      const now = Date.now();
-      setPrimitives((prevPrimitives) => {
-        const updatedPrimitives = new Map(prevPrimitives);
-        for (const [id, primitive] of prevPrimitives) {
-          if (primitive.expiryTime <= now) {
-            updatedPrimitives.delete(id);
-          }
-        }
-        return updatedPrimitives;
-      });
-    }, 100);
-    return () => clearInterval(intervalId);
-  }, []);
-
-  useLayoutEffect(() => {
+    useLayoutEffect(() => {
     context.onRender = (renderState, done) => {
       setMessages(renderState.currentFrame);
       setTopics(renderState.topics);
@@ -324,8 +267,8 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
         if (message.topic === config.topic) {
           setSvgArrayMessage(message.message as SvgPrimitiveArray);
           // setLogMessages((prevMessages) => [...prevMessages, `Received message on topic '${message.topic}'`]);
-          const now = Date.now();
           setPrimitives((prevPrimitives) => {
+            const now = Date.now();
             const updatedPrimitives = new Map(prevPrimitives);
             for (const [id, primitive] of prevPrimitives) {
               if (primitive.expiryTime <= now) {
