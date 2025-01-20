@@ -38,12 +38,6 @@ interface PanelConfig {
   };
 }
 
-type MessageEvent = {
-  message: unknown;
-  topic: string;
-  receiveTime: { sec: number; nsec: number };
-};
-
 type MessageHandler = (event: MessageEvent) => void;
 
 const defaultConfig: PanelConfig = {
@@ -62,13 +56,8 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   );
   const [viewBox, setViewBox] = useState("-450 -300 900 600");
   const [config, setConfig] = useState<PanelConfig>(defaultConfig);
-  const [logMessages, setLogMessages] = useState<string[]>([]);
-  // const [message, setMessage] = useState<FoxgloveMessageEvent<unknown> | undefined>();
-  // const [topics, setTopics] = useState<readonly Topic[]>([]);
-  // const [renderDone, setRenderDone] = useState<RenderDone>();
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
   const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
-  const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
 
   const [svgArrayMessage, setSvgArrayMessage] = useState<SvgPrimitiveArray | undefined>();
 
@@ -86,10 +75,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     }
     context.subscribe(topicsList);
   }, [context, config]);
-
-  const handleLogMessage = useCallback((message: string) => {
-    setLogMessages((prevMessages) => [...prevMessages, message]);
-  }, []);
 
   useLayoutEffect(() => {
     context.saveState(config);
@@ -182,15 +167,13 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           });
           return updatedPrimitives;
         });
-      } else {
-        handleLogMessage(`Received message is not a SvgPrimitiveArray: ${JSON.stringify(event.message)}`);
       }
     };
     unsubscribe = context.subscribe([{ topic: config.topic }]);
     return () => {
       // unsubscribe は void を返す可能性があるため、この行は削除します。
     };
-  }, [context, config, setConfig, setPrimitives, setLogMessages, handleLogMessage]);
+  }, [context, config, setConfig, setPrimitives]);
 
   const renderGrid = useCallback(() => {
     if (!config.showGrid) return null;
@@ -227,15 +210,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     return lines;
   }, [config.showGrid, config.gridSize]);
 
-  const renderPrimitive = useCallback(
-    (primitive: SvgPrimitive & { expiryTime: number } | null): JSX.Element | null => {
-      if (!primitive) return null;
-      const { id, svg_text } = primitive;
-      return <g key={id} dangerouslySetInnerHTML={{ __html: svg_text }} />;
-    },
-    []
-  );
-
   const createNamespaceFields = (namespaces: PanelConfig["namespaces"]) => {
     const fields: { [key: string]: SettingsTreeField } = {};
     const addFieldsRecursive = (ns: { [key: string]: any }, path: string[] = []) => {
@@ -257,19 +231,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     return fields;
   };
 
-  const shouldRenderPrimitive = (primitive: SvgPrimitive & { expiryTime: number }) => {
-    const namespacePath = primitive.primitive_namespace.split("/");
-    let visible = true;
-    let currentNs = config.namespaces;
-    for (const ns of namespacePath) {
-      if (!currentNs[ns] || !currentNs[ns].visible) {
-        // visible = false;
-        break;
-      }
-      currentNs = currentNs[ns].children || {};
-    }
-    return visible;
-  };
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -289,8 +250,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
 
   useLayoutEffect(() => {
     context.onRender = (renderState, done) => {
-      setRenderDone(() => done);
-
       setMessages(renderState.currentFrame);
       setTopics(renderState.topics);
     };
@@ -321,20 +280,10 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     }
   }, [messages]);
 
-  // invoke the done callback once the render is complete
-  useEffect(() => {
-    renderDone?.();
-  }, [renderDone]);
-
   return (
     <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
       <div>
         <p>Topic: {config.topic}</p>
-        <ul>
-          {logMessages.map((message, index) => (
-            <li key={index}>{message}</li>
-          ))}
-        </ul>
       </div>
       <svg
         width="100%"
