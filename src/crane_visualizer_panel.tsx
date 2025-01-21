@@ -111,12 +111,10 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   const [layerTree, setLayerTree] = useState<Record<string, Layer>>({});
   const handleSvgPrimitiveArray = (data: SvgPrimitiveArray) => {
     const path = data.layer.split("/").filter((part) => part);
-    if (path[0] === "local_planner") {
-      setRecvNum((prevNum) => prevNum + 1);
-      setLayerTree((prevTree) =>
-        updateLayerTree(prevTree, path, data.primitives)
-      );
-    }
+    setRecvNum((prevNum) => prevNum + 1);
+    setLayerTree((prevTree) =>
+      updateLayerTree(prevTree, path, data.primitives)
+    );
   };
 
   // トピックが設定されたときにサブスクライブする
@@ -284,14 +282,14 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
       {Object.values(layerTree).map((layer) => (
         <div key={layer.name}>
           <p>{layer.name} : {layer.primitives.length}</p>
-          {Object.values(layer.children).map((child: Layer) => (
+          {/* {Object.values(layer.children).map((child: Layer) => (
             <>
               <p key={child.name}>{child.name} : {child.primitives?.length || 0}</p>
               {child.primitives?.map((primitive: SvgPrimitive, index) => (
                 <p>{primitive.svg_text}</p>
               ))}
             </>
-          ))}
+          ))} */}
         </div>
       ))}
       <svg
