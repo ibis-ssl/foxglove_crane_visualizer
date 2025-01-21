@@ -106,11 +106,13 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
   const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
+  const [recv_num, setRecvNum] = useState(0);
 
   const [layerTree, setLayerTree] = useState<Record<string, Layer>>({});
   const handleSvgPrimitiveArray = (data: SvgPrimitiveArray) => {
     const path = data.layer.split("/").filter((part) => part);
     if (path[0] === "local_planner") {
+      setRecvNum((prevNum) => prevNum + 1);
       setLayerTree((prevTree) =>
         updateLayerTree(prevTree, path, data.primitives)
       );
@@ -276,6 +278,22 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
       <div>
         <p>Topic: {topic}</p>
       </div>
+      <div>
+        <p>Receive num: {recv_num}</p>
+      </div>
+      {Object.values(layerTree).map((layer) => (
+        <div key={layer.name}>
+          <p>{layer.name} : {layer.primitives.length}</p>
+          {Object.values(layer.children).map((child: Layer) => (
+            <>
+              <p key={child.name}>{child.name} : {child.primitives?.length || 0}</p>
+              {child.primitives?.map((primitive: SvgPrimitive, index) => (
+                <p>{primitive.svg_text}</p>
+              ))}
+            </>
+          ))}
+        </div>
+      ))}
       <svg
         width="100%"
         height="100%"
