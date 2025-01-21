@@ -153,24 +153,24 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           const path = action.payload.path.join(".");
           switch (action.action) {
             case "update":
-                if(path == "general.topic"){
-                  setTopic(action.payload.value as string);
-                }else if(path == "general.showGrid"){
-                  setConfig((prevConfig) => ({...prevConfig, showGrid: action.payload.value as boolean}));
-                }else if(path == "general.backgroundColor"){
-                  setConfig((prevConfig) => ({...prevConfig, backgroundColor: action.payload.value as string}));
-                }else if(path == "general.fieldColor"){
-                  setConfig((prevConfig) => ({...prevConfig, fieldColor: action.payload.value as string}));
-                }else if(action.payload.path[0] == "namespaces"){
-                  const pathParts = path.split(".");
-                  const namespacePath = pathParts.slice(1, -1);
-                  const leafNamespace = pathParts[pathParts.length - 1];
-                  let currentNs = config.namespaces;
-                  for (const ns of namespacePath) {
-                    currentNs = currentNs[ns].children || {};
-                  }
-                  currentNs[leafNamespace].visible = action.payload.value as boolean;
+              if (path == "general.topic") {
+                setTopic(action.payload.value as string);
+              } else if (path == "general.showGrid") {
+                setConfig((prevConfig) => ({ ...prevConfig, showGrid: action.payload.value as boolean }));
+              } else if (path == "general.backgroundColor") {
+                setConfig((prevConfig) => ({ ...prevConfig, backgroundColor: action.payload.value as string }));
+              } else if (path == "general.fieldColor") {
+                setConfig((prevConfig) => ({ ...prevConfig, fieldColor: action.payload.value as string }));
+              } else if (action.payload.path[0] == "namespaces") {
+                const pathParts = path.split(".");
+                const namespacePath = pathParts.slice(1, -1);
+                const leafNamespace = pathParts[pathParts.length - 1];
+                let currentNs = config.namespaces;
+                for (const ns of namespacePath) {
+                  currentNs = currentNs[ns].children || {};
                 }
+                currentNs[leafNamespace].visible = action.payload.value as boolean;
+              }
               break;
             case "perform-node-action":
               break;
@@ -244,7 +244,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   useLayoutEffect(() => {
     context.onRender = (renderState, done) => {
       if (renderState.currentFrame) {
-      renderState.currentFrame.forEach((message) => {
+        renderState.currentFrame.forEach((message) => {
           if (message.topic === topic) {
             handleSvgPrimitiveArray(message.message as SvgPrimitiveArray);
           }
