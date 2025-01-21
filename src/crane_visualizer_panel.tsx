@@ -55,8 +55,6 @@ interface Layer {
   children: Record<string, Layer>; // 子レイヤー
 }
 
-const parseLayerPath = (path: string): string[] => path.split("/");
-
 const updateLayerTree = (
   tree: Record<string, Layer>,
   path: string[],
@@ -90,9 +88,9 @@ const updateLayerTree = (
 const renderLayer = (layer: Layer): React.ReactNode => (
   <g key={layer.name}>
     {/* SVGプリミティブの描画 */}
-    {layer.primitives.map((primitive) => (
+    {layer.primitives.map((primitive, index) => (
       <g
-        key={primitive.id}
+        key={index}
         dangerouslySetInnerHTML={{ __html: primitive.svg_text }}
       />
     ))}
@@ -108,10 +106,12 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
 
   const [layerTree, setLayerTree] = useState<Record<string, Layer>>({});
   const handleSvgPrimitiveArray = (data: SvgPrimitiveArray) => {
-    const path = parseLayerPath(data.layer);
-    setLayerTree((prevTree) =>
-      updateLayerTree(prevTree, path, data.primitives)
-    );
+    const path = data.layer.split("/").filter((part) => part);
+    if (path[0] === "local_planner") {
+      setLayerTree((prevTree) =>
+        updateLayerTree(prevTree, path, data.primitives)
+      );
+    }
   };
 
   // トピックが設定されたときにサブスクライブする
