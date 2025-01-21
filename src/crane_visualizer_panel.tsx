@@ -100,7 +100,7 @@ const renderLayer = (layer: Layer): React.ReactNode => (
 );
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
-  const [viewBox, setViewBox] = useState("-450 -300 900 600");
+  const [viewBox, setViewBox] = useState("-5000 -3000 5000 3000");
   const [config, setConfig] = useState<PanelConfig>(defaultConfig);
   const [topic, setTopic] = useState<string>("/visualizer_svgs");
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
