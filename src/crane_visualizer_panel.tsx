@@ -7,6 +7,7 @@ import {
   SettingsTreeField,
   MessageEvent,
   Topic,
+  Subscription,
   Immutable
 } from "@foxglove/studio";
 import ReactDOM from "react-dom";
@@ -24,7 +25,6 @@ interface SvgPrimitiveArray {
 }
 
 interface PanelConfig {
-  topic: string;
   backgroundColor: string;
   fieldColor: string;
   showGrid: boolean;
@@ -41,7 +41,6 @@ interface PanelConfig {
 type MessageHandler = (event: MessageEvent) => void;
 
 const defaultConfig: PanelConfig = {
-  topic: "/visualizer_svgs",
   backgroundColor: "#FFFFFF",
   fieldColor: "#00FF00",
   showGrid: true,
@@ -103,15 +102,9 @@ const renderLayer = (layer: Layer): React.ReactNode => (
 );
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
-  const [primitives, setPrimitives] = useState<Map<number, SvgPrimitive & { expiryTime: number }>>(
-    new Map()
-  );
   const [viewBox, setViewBox] = useState("-450 -300 900 600");
   const [config, setConfig] = useState<PanelConfig>(defaultConfig);
-  const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
-  const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
-
-  const [svgArrayMessage, setSvgArrayMessage] = useState<SvgPrimitiveArray | undefined>();
+  const [topic, setTopic] = useState<string>("/visualizer_svgs");
 
   const [layerTree, setLayerTree] = useState<Record<string, Layer>>({});
   const handleSvgPrimitiveArray = (data: SvgPrimitiveArray) => {
@@ -121,10 +114,11 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     );
   };
 
-  const svgTopics = useMemo(
-    () => (topics ?? []).filter((topic) => topic.schemaName === "crane_visualization_interfaces/msg/SvgPrimitiveArray"),
-    [topics],
-  );
+  // トピックが設定されたときにサブスクライブする
+  useEffect(() => {
+    const subscription: Subscription = { topic: topic };
+    context.subscribe([subscription]);
+  }, [topic]);
 
   useLayoutEffect(() => {
     context.saveState(config);
@@ -144,7 +138,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           general: {
             label: "General",
             fields: {
-              topic: { label: "トピック名", input: "string", value: config.topic },
+              topic: { label: "トピック名", input: "string", value: topic },
               showGrid: { label: "グリッド表示", input: "boolean", value: config.showGrid },
               backgroundColor: { label: "背景色", input: "rgba", value: config.backgroundColor },
               fieldColor: { label: "フィールド色", input: "rgba", value: config.fieldColor },
@@ -181,17 +175,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     };
 
     updatePanelSettings();
-    let unsubscribe;
-      const handleMessage: MessageHandler = (event: MessageEvent) => {
-        if (typeof event.message === 'object' && event.message !== null && 'primitives' in event.message) {
-          handleSvgPrimitiveArray(event.message as SvgPrimitiveArray);
-        }
-      };
-    unsubscribe = context.subscribe([{ topic: config.topic }]);
-    return () => {
-      // unsubscribe は void を返す可能性があるため、この行は削除します。
-    };
-  }, [context, config, setConfig, setPrimitives]);
+  }, [context, config]);
 
   const renderGrid = useCallback(() => {
     if (!config.showGrid) return null;
@@ -250,10 +234,16 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   };
 
 
-    useLayoutEffect(() => {
+  // メッセージ受信時の処理
+  useLayoutEffect(() => {
     context.onRender = (renderState, done) => {
-      setMessages(renderState.currentFrame);
-      setTopics(renderState.topics);
+      if (renderState.currentFrame) {
+      renderState.currentFrame.forEach((message) => {
+          if (message.topic === topic) {
+            handleSvgPrimitiveArray(message.message as SvgPrimitiveArray);
+          }
+        });
+      }
     };
 
     context.watch("topics");
@@ -261,31 +251,10 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
 
   }, [context]);
 
-  useEffect(() => {
-    if (messages) {
-      for (const message of messages) {
-        if (message.topic === config.topic) {
-          setSvgArrayMessage(message.message as SvgPrimitiveArray);
-          // setLogMessages((prevMessages) => [...prevMessages, `Received message on topic '${message.topic}'`]);
-          setPrimitives((prevPrimitives) => {
-            const now = Date.now();
-            const updatedPrimitives = new Map(prevPrimitives);
-            for (const [id, primitive] of prevPrimitives) {
-              if (primitive.expiryTime <= now) {
-                updatedPrimitives.delete(id);
-              }
-            }
-            return updatedPrimitives;
-          });
-        }
-      }
-    }
-  }, [messages]);
-
   return (
     <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
       <div>
-        <p>Topic: {config.topic}</p>
+        <p>Topic: {topic}</p>
       </div>
       <svg
         width="100%"
