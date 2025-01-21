@@ -103,6 +103,9 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   const [viewBox, setViewBox] = useState("-450 -300 900 600");
   const [config, setConfig] = useState<PanelConfig>(defaultConfig);
   const [topic, setTopic] = useState<string>("/visualizer_svgs");
+  const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
+  const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
+  const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
 
   const [layerTree, setLayerTree] = useState<Record<string, Layer>>({});
   const handleSvgPrimitiveArray = (data: SvgPrimitiveArray) => {
@@ -243,19 +246,30 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   // メッセージ受信時の処理
   useLayoutEffect(() => {
     context.onRender = (renderState, done) => {
-      if (renderState.currentFrame) {
-        renderState.currentFrame.forEach((message) => {
-          if (message.topic === topic) {
-            handleSvgPrimitiveArray(message.message as SvgPrimitiveArray);
-          }
-        });
-      }
+      setRenderDone(() => done);
+      setMessages(renderState.currentFrame);
+      setTopics(renderState.topics);
     };
 
     context.watch("topics");
     context.watch("currentFrame");
 
   }, [context]);
+
+  useEffect(() => {
+    if (messages) {
+      for (const message of messages) {
+        if (message.topic === topic) {
+          handleSvgPrimitiveArray(message.message as SvgPrimitiveArray);
+        }
+      }
+    }
+  }, [messages]);
+
+  // invoke the done callback once the render is complete
+  useEffect(() => {
+    renderDone?.();
+  }, [renderDone]);
 
   return (
     <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
