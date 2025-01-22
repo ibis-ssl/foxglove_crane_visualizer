@@ -301,10 +301,14 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           const startX = e.clientX;
           const startY = e.clientY;
           const [x, y, width, height] = viewBox.split(" ").map(Number);
+          const initialWidth = 10000;
+          const initialHeight = 6000;
           const handleMouseMove = (e: MouseEvent) => {
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
-            setViewBox(`${x - dx} ${y - dy} ${width} ${height}`);
+            const scaledDx = dx / initialWidth * 1000;
+            const scaledDy = dy / initialHeight * 1000;
+            setViewBox(`${x - scaledDx} ${y - scaledDy} ${width} ${height}`);
           };
           const handleMouseUp = () => {
             document.removeEventListener("mousemove", handleMouseMove);
