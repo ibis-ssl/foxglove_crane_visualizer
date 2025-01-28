@@ -13,15 +13,9 @@ import {
 import ReactDOM from "react-dom";
 import { StrictMode } from "react";
 
-interface SvgPrimitive {
-  id: number;
-  lifetime: number;
-  svg_text: string; // SVG要素を表すテキスト
-}
-
 interface SvgPrimitiveArray {
   layer: string; // "parent/child1/child2"のような階層パス
-  primitives: SvgPrimitive[];
+  svg_primitives: string[];
 }
 
 interface PanelConfig {
