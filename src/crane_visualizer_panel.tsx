@@ -27,7 +27,6 @@ interface SvgPrimitiveArray {
 interface PanelConfig {
   backgroundColor: string;
   fieldColor: string;
-  showGrid: boolean;
   gridSize: number;
   message: string;
   namespaces: {
@@ -43,8 +42,6 @@ type MessageHandler = (event: MessageEvent) => void;
 const defaultConfig: PanelConfig = {
   backgroundColor: "#FFFFFF",
   fieldColor: "#00FF00",
-  showGrid: true,
-  gridSize: 100,
   message: "",
   namespaces: {},
 };
@@ -142,7 +139,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
             label: "General",
             fields: {
               topic: { label: "トピック名", input: "string", value: topic },
-              showGrid: { label: "グリッド表示", input: "boolean", value: config.showGrid },
               backgroundColor: { label: "背景色", input: "rgba", value: config.backgroundColor },
               fieldColor: { label: "フィールド色", input: "rgba", value: config.fieldColor },
             },
@@ -158,8 +154,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
             case "update":
               if (path == "general.topic") {
                 setTopic(action.payload.value as string);
-              } else if (path == "general.showGrid") {
-                setConfig((prevConfig) => ({ ...prevConfig, showGrid: action.payload.value as boolean }));
               } else if (path == "general.backgroundColor") {
                 setConfig((prevConfig) => ({ ...prevConfig, backgroundColor: action.payload.value as string }));
               } else if (path == "general.fieldColor") {
@@ -185,41 +179,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
 
     updatePanelSettings();
   }, [context, config]);
-
-  const renderGrid = useCallback(() => {
-    if (!config.showGrid) return null;
-    const lines: JSX.Element[] = [];
-    const size = config.gridSize;
-    for (let x = -450; x <= 450; x += size) {
-      lines.push(
-        <line
-          key={`vertical-${x}`}
-          x1={x}
-          y1={-300}
-          x2={x}
-          y2={300}
-          stroke="#CCCCCC"
-          strokeWidth="1"
-          opacity="0.5"
-        />
-      );
-    }
-    for (let y = -300; y <= 300; y += size) {
-      lines.push(
-        <line
-          key={`horizontal-${y}`}
-          x1={-450}
-          y1={y}
-          x2={450}
-          y2={y}
-          stroke="#CCCCCC"
-          strokeWidth="1"
-          opacity="0.5"
-        />
-      );
-    }
-    return lines;
-  }, [config.showGrid, config.gridSize]);
 
   const createNamespaceFields = (namespaces: PanelConfig["namespaces"]) => {
     const fields: { [key: string]: SettingsTreeField } = {};
@@ -330,7 +289,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           setViewBox(`${newX} ${newY} ${newWidth} ${newHeight}`);
         }}
       >
-        {config.showGrid && renderGrid()}
         {Object.values(layerTree).map((layer) => renderLayer(layer))}
       </svg>
     </div>
