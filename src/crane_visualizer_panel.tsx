@@ -27,7 +27,6 @@ interface SvgPrimitiveArray {
 interface PanelConfig {
   backgroundColor: string;
   fieldColor: string;
-  gridSize: number;
   message: string;
   namespaces: {
     [key: string]: {
@@ -260,13 +259,11 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           const startX = e.clientX;
           const startY = e.clientY;
           const [x, y, width, height] = viewBox.split(" ").map(Number);
-          const initialWidth = 10000;
-          const initialHeight = 6000;
           const handleMouseMove = (e: MouseEvent) => {
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
-            const scaledDx = dx / initialWidth * 1000;
-            const scaledDy = dy / initialHeight * 1000;
+            const scaledDx = dx * width / 400;
+            const scaledDy = dy * height / 400;
             setViewBox(`${x - scaledDx} ${y - scaledDy} ${width} ${height}`);
           };
           const handleMouseUp = () => {
@@ -279,9 +276,17 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
         onWheel={(e) => {
           e.preventDefault();
           const [x, y, width, height] = viewBox.split(" ").map(Number);
-          const scale = e.deltaY > 0 ? 0.9 : 1.1;
-          const newWidth = width * scale;
-          const newHeight = height * scale;
+          const scale = e.deltaY > 0 ? 0.8 : 1.2;
+          let newWidth = width * scale;
+          let newHeight = height * scale;
+          const minWidth = width / 10;
+          const maxWidth = width * 10;
+          const minHeight = height / 10;
+          const maxHeight = height * 10;
+
+          newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+          newHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+
           const centerX = x + width / 2;
           const centerY = y + height / 2;
           const newX = centerX - newWidth / 2;
