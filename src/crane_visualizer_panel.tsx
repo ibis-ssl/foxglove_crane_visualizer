@@ -20,7 +20,6 @@ interface SvgPrimitiveArray {
 
 interface PanelConfig {
   backgroundColor: string;
-  fieldColor: string;
   message: string;
   namespaces: {
     [key: string]: {
@@ -33,22 +32,21 @@ interface PanelConfig {
 type MessageHandler = (event: MessageEvent) => void;
 
 const defaultConfig: PanelConfig = {
-  backgroundColor: "#FFFFFF",
-  fieldColor: "#00FF00",
+  backgroundColor: "#b0b0b0ff",
   message: "",
   namespaces: {},
 };
 
 interface Layer {
   name: string; // レイヤー名
-  primitives: SvgPrimitive[]; // SVGプリミティブ
+  primitives: string[]; // SVGプリミティブ
   children: Record<string, Layer>; // 子レイヤー
 }
 
 const updateLayerTree = (
   tree: Record<string, Layer>,
   path: string[],
-  newLayer: SvgPrimitive[]
+  newLayer: string[]
 ): Record<string, Layer> => {
   if (path.length === 0) return tree;
 
@@ -81,7 +79,7 @@ const renderLayer = (layer: Layer): React.ReactNode => (
     {layer.primitives.map((primitive, index) => (
       <g
         key={index}
-        dangerouslySetInnerHTML={{ __html: primitive.svg_text }}
+        dangerouslySetInnerHTML={{ __html: primitive }}
       />
     ))}
     {/* 子レイヤーの再帰描画 */}
@@ -103,7 +101,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     const path = data.layer.split("/").filter((part) => part);
     setRecvNum((prevNum) => prevNum + 1);
     setLayerTree((prevTree) =>
-      updateLayerTree(prevTree, path, data.primitives)
+      updateLayerTree(prevTree, path, data.svg_primitives)
     );
   };
 
@@ -133,7 +131,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
             fields: {
               topic: { label: "トピック名", input: "string", value: topic },
               backgroundColor: { label: "背景色", input: "rgba", value: config.backgroundColor },
-              fieldColor: { label: "フィールド色", input: "rgba", value: config.fieldColor },
             },
           },
           namespaces: {
