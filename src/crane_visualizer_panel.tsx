@@ -13,15 +13,13 @@ import {
 import ReactDOM from "react-dom";
 import { StrictMode } from "react";
 
-interface SvgPrimitive {
-  id: number;
-  lifetime: number;
-  svg_text: string; // SVG要素を表すテキスト
-}
-
 interface SvgPrimitiveArray {
   layer: string; // "parent/child1/child2"のような階層パス
-  primitives: SvgPrimitive[];
+  svg_primitives: string[];
+}
+
+interface SvgLayerArray{
+  svg_primitive_arrays: SvgPrimitiveArray[];
 }
 
 interface PanelConfig {
@@ -36,8 +34,6 @@ interface PanelConfig {
   };
 }
 
-type MessageHandler = (event: MessageEvent) => void;
-
 const defaultConfig: PanelConfig = {
   backgroundColor: "#FFFFFF",
   fieldColor: "#00FF00",
@@ -45,73 +41,16 @@ const defaultConfig: PanelConfig = {
   namespaces: {},
 };
 
-interface Layer {
-  name: string; // レイヤー名
-  primitives: SvgPrimitive[]; // SVGプリミティブ
-  children: Record<string, Layer>; // 子レイヤー
-}
-
-const updateLayerTree = (
-  tree: Record<string, Layer>,
-  path: string[],
-  newLayer: SvgPrimitive[]
-): Record<string, Layer> => {
-  if (path.length === 0) return tree;
-
-  const [current, ...rest] = path;
-  if (rest.length === 0) {
-    // 末端のレイヤーを上書き
-    return {
-      ...tree,
-      [current]: {
-        name: current,
-        primitives: newLayer,
-        children: {},
-      },
-    };
-  }
-
-  return {
-    ...tree,
-    [current]: {
-      name: current,
-      primitives: tree[current]?.primitives || [],
-      children: updateLayerTree(tree[current]?.children || {}, rest, newLayer),
-    },
-  };
-};
-
-const renderLayer = (layer: Layer): React.ReactNode => (
-  <g key={layer.name}>
-    {/* SVGプリミティブの描画 */}
-    {layer.primitives.map((primitive, index) => (
-      <g
-        key={index}
-        dangerouslySetInnerHTML={{ __html: primitive.svg_text }}
-      />
-    ))}
-    {/* 子レイヤーの再帰描画 */}
-    {Object.values(layer.children).map((child) => renderLayer(child))}
-  </g>
-);
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
   const [viewBox, setViewBox] = useState("-5000 -3000 5000 3000");
   const [config, setConfig] = useState<PanelConfig>(defaultConfig);
-  const [topic, setTopic] = useState<string>("/visualizer_svgs");
+  const [topic, setTopic] = useState<string>("/aggregated_svgs");
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
   const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
   const [recv_num, setRecvNum] = useState(0);
-
-  const [layerTree, setLayerTree] = useState<Record<string, Layer>>({});
-  const handleSvgPrimitiveArray = (data: SvgPrimitiveArray) => {
-    const path = data.layer.split("/").filter((part) => part);
-    setRecvNum((prevNum) => prevNum + 1);
-    setLayerTree((prevTree) =>
-      updateLayerTree(prevTree, path, data.primitives)
-    );
-  };
+  const [latest_msg, setLatestMsg] = useState<SvgLayerArray>();
 
   // トピックが設定されたときにサブスクライブする
   useEffect(() => {
@@ -218,7 +157,8 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     if (messages) {
       for (const message of messages) {
         if (message.topic === topic) {
-          handleSvgPrimitiveArray(message.message as SvgPrimitiveArray);
+          setLatestMsg(message.message as SvgLayerArray);
+          setRecvNum(recv_num + 1);
         }
       }
     }
@@ -237,19 +177,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
       <div>
         <p>Receive num: {recv_num}</p>
       </div>
-      {Object.values(layerTree).map((layer) => (
-        <div key={layer.name}>
-          <p>{layer.name} : {layer.primitives.length}</p>
-          {/* {Object.values(layer.children).map((child: Layer) => (
-            <>
-              <p key={child.name}>{child.name} : {child.primitives?.length || 0}</p>
-              {child.primitives?.map((primitive: SvgPrimitive, index) => (
-                <p>{primitive.svg_text}</p>
-              ))}
-            </>
-          ))} */}
-        </div>
-      ))}
       <svg
         width="100%"
         height="100%"
@@ -294,7 +221,13 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           setViewBox(`${newX} ${newY} ${newWidth} ${newHeight}`);
         }}
       >
-        {Object.values(layerTree).map((layer) => renderLayer(layer))}
+        {latest_msg && latest_msg.svg_primitive_arrays.map((svg_primitive_array, index) => (
+          <g key={svg_primitive_array.layer}>
+            {svg_primitive_array.svg_primitives.map((svg_primitive, index) => (
+              <g dangerouslySetInnerHTML= {{ __html: svg_primitive }} />
+            ))}
+          </g>
+        ))}
       </svg>
     </div>
   );
