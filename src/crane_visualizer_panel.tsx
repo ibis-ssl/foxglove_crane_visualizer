@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useCallback, useLayoutEffect, useState, useEffect, useMemo } from "react";
+import { useCallback, useLayoutEffect, useState, useEffect, useRef } from "react";
 import {
   PanelExtensionContext,
   SettingsTree,
@@ -41,7 +41,6 @@ const defaultConfig: PanelConfig = {
 
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
-  const [viewBox, setViewBox] = useState("-5000 -3000 5000 3000");
   const [config, setConfig] = useState<PanelConfig>(defaultConfig);
   const [topic, setTopic] = useState<string>("/aggregated_svgs");
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
@@ -78,10 +77,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
               backgroundColor: { label: "背景色", input: "rgba", value: config.backgroundColor },
             },
           },
-          namespaces: {
-            label: "名前空間",
-            fields: createNamespaceFields(config.namespaces),
-          },
         },
         actionHandler: (action: SettingsTreeAction) => {
           const path = action.payload.path.join(".");
@@ -113,37 +108,12 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     updatePanelSettings();
   }, [context, config]);
 
-  const createNamespaceFields = (namespaces: PanelConfig["namespaces"]) => {
-    const fields: { [key: string]: SettingsTreeField } = {};
-    const addFieldsRecursive = (ns: { [key: string]: any }, path: string[] = []) => {
-      for (const [name, { visible, children }] of Object.entries(ns)) {
-        const currentPath = [...path, name];
-        const key = currentPath.join(".");
-        fields[key] = {
-          label: name,
-          input: "boolean",
-          value: visible,
-          help: "名前空間の表示/非表示",
-        };
-        if (children) {
-          addFieldsRecursive(children, currentPath);
-        }
-      }
-    };
-    addFieldsRecursive(namespaces);
-    return fields;
-  };
-
-
   // メッセージ受信時の処理
   useLayoutEffect(() => {
     context.onRender = (renderState, done) => {
       setRenderDone(() => done);
       setMessages(renderState.currentFrame);
-      setTopics(renderState.topics);
     };
-
-    context.watch("topics");
     context.watch("currentFrame");
 
   }, [context]);
