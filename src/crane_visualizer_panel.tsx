@@ -228,10 +228,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     context.onRender = (renderState, done) => {
       setRenderDone(() => done);
       setMessages(renderState.currentFrame);
-      setTopics(renderState.topics);
     };
-
-    context.watch("topics");
     context.watch("currentFrame");
 
   }, [context]);
