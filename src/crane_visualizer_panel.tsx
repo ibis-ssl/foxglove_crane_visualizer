@@ -153,23 +153,61 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
 
   }, [context]);
 
-  useEffect(() => {
-    if (messages) {
-      for (const message of messages) {
-        if (message.topic === topic) {
-          setLatestMsg(message.message as SvgLayerArray);
-          setRecvNum(recv_num + 1);
-        }
+useEffect(() => {
+  if (messages) {
+    for (const message of messages) {
+      if (message.topic === topic) {
+        const msg = message.message as SvgLayerArray;
+        setLatestMsg(msg);
+        setRecvNum(recv_num + 1);
+
+        // 初期化時にconfig.namespacesを設定
+        setConfig((prevConfig) => {
+          const newNamespaces = { ...prevConfig.namespaces };
+          msg.svg_primitive_arrays.forEach((svg_primitive_array) => {
+            if (!newNamespaces[svg_primitive_array.layer]) {
+              newNamespaces[svg_primitive_array.layer] = { visible: true };
+            }
+          });
+          return { ...prevConfig, namespaces: newNamespaces };
+        });
       }
     }
-  }, [messages]);
+  }
+}, [messages]);
 
   // invoke the done callback once the render is complete
   useEffect(() => {
     renderDone?.();
   }, [renderDone]);
 
-  return (
+const handleCheckboxChange = (layer: string) => {
+  setConfig((prevConfig) => {
+    const newNamespaces = { ...prevConfig.namespaces };
+    if (!newNamespaces[layer]) {
+      newNamespaces[layer] = { visible: true };
+    }
+    newNamespaces[layer].visible = !newNamespaces[layer].visible;
+    return { ...prevConfig, namespaces: newNamespaces };
+  });
+};
+
+return (
+  <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
+    <div>
+      {latest_msg && latest_msg.svg_primitive_arrays.map((svg_primitive_array) => (
+        <div key={svg_primitive_array.layer}>
+          <label>
+            <input
+              type="checkbox"
+              checked={config.namespaces[svg_primitive_array.layer]?.visible ?? true}
+              onChange={() => handleCheckboxChange(svg_primitive_array.layer)}
+            />
+            {svg_primitive_array.layer}
+          </label>
+        </div>
+      ))}
+    </div>
     <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
       <div>
         <p>Topic: {topic}</p>
@@ -222,7 +260,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
         }}
       >
         {latest_msg && latest_msg.svg_primitive_arrays.map((svg_primitive_array, index) => (
-          <g key={svg_primitive_array.layer}>
+          <g key={svg_primitive_array.layer} style={{ display: config.namespaces[svg_primitive_array.layer]?.visible ? 'block' : 'none' }}>
             {svg_primitive_array.svg_primitives.map((svg_primitive, index) => (
               <g dangerouslySetInnerHTML= {{ __html: svg_primitive }} />
             ))}
@@ -230,7 +268,8 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
         ))}
       </svg>
     </div>
-  );
+  </div>
+);
 };
 
 export function initPanel(context: PanelExtensionContext): () => void {
