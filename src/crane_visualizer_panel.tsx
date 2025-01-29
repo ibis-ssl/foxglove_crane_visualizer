@@ -24,7 +24,6 @@ interface SvgLayerArray{
 
 interface PanelConfig {
   backgroundColor: string;
-  fieldColor: string;
   message: string;
   namespaces: {
     [key: string]: {
@@ -35,8 +34,7 @@ interface PanelConfig {
 }
 
 const defaultConfig: PanelConfig = {
-  backgroundColor: "#FFFFFF",
-  fieldColor: "#00FF00",
+  backgroundColor: "#585858ff",
   message: "",
   namespaces: {},
 };
@@ -78,7 +76,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
             fields: {
               topic: { label: "トピック名", input: "string", value: topic },
               backgroundColor: { label: "背景色", input: "rgba", value: config.backgroundColor },
-              fieldColor: { label: "フィールド色", input: "rgba", value: config.fieldColor },
             },
           },
           namespaces: {
@@ -94,8 +91,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
                 setTopic(action.payload.value as string);
               } else if (path == "general.backgroundColor") {
                 setConfig((prevConfig) => ({ ...prevConfig, backgroundColor: action.payload.value as string }));
-              } else if (path == "general.fieldColor") {
-                setConfig((prevConfig) => ({ ...prevConfig, fieldColor: action.payload.value as string }));
               } else if (action.payload.path[0] == "namespaces") {
                 const pathParts = path.split(".");
                 const namespacePath = pathParts.slice(1, -1);
