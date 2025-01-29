@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useCallback, useLayoutEffect, useState, useEffect, useMemo } from "react";
+import { useCallback, useLayoutEffect, useState, useEffect, useRef } from "react";
 import {
   PanelExtensionContext,
   SettingsTree,
@@ -73,37 +73,101 @@ const updateLayerTree = (
   };
 };
 
-const renderLayer = (layer: Layer): React.ReactNode => (
-  <g key={layer.name}>
-    {/* SVGプリミティブの描画 */}
-    {layer.primitives.map((primitive, index) => (
-      <g
-        key={index}
-        dangerouslySetInnerHTML={{ __html: primitive }}
-      />
-    ))}
-    {/* 子レイヤーの再帰描画 */}
-    {Object.values(layer.children).map((child) => renderLayer(child))}
-  </g>
-);
+interface SvgRendererProps {
+  svgData: string;
+  visibleLayers: string[];
+}
+
+const SvgRenderer: React.FC<SvgRendererProps> = ({ svgData, visibleLayers }) => {
+  const svgContainerRef = useRef<HTMLDivElement>(null);
+
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [viewBox, setViewBox] = useState({ x: -5000, y: -3000, width: 5000, height: 3000 });
+
+  useEffect(() => {
+    const handleMouseDown = (event: MouseEvent) => {
+      setIsDragging(true);
+      setDragStart({ x: event.clientX, y: event.clientY });
+    };
+
+    const handleMouseMove = (event: MouseEvent) => {
+      if (isDragging && dragStart && svgContainerRef.current) {
+        const dx = event.clientX - dragStart.x;
+        const dy = event.clientY - dragStart.y;
+        setViewBox((prev) => ({
+          x: prev.x - dx,
+          y: prev.y - dy,
+          width: prev.width,
+          height: prev.height,
+        }));
+        setDragStart({ x: event.clientX, y: event.clientY });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setDragStart(null);
+    };
+
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const scale = event.deltaY < 0 ? 0.9 : 1.1;
+      setViewBox((prev) => ({
+        x: prev.x + (prev.width * (1 - scale)) / 2,
+        y: prev.y + (prev.height * (1 - scale)) / 2,
+        width: prev.width * scale,
+        height: prev.height * scale,
+      }));
+    };
+
+    const container = svgContainerRef.current;
+    if (container) {
+      container.addEventListener("mousedown", handleMouseDown);
+      container.addEventListener("mousemove", handleMouseMove);
+      container.addEventListener("mouseup", handleMouseUp);
+      container.addEventListener("wheel", handleWheel);
+
+      return () => {
+        container.removeEventListener("mousedown", handleMouseDown);
+        container.removeEventListener("mousemove", handleMouseMove);
+        container.removeEventListener("mouseup", handleMouseUp);
+        container.removeEventListener("wheel", handleWheel);
+      };
+    }
+
+    if (svgContainerRef.current && svgData) {
+      const container = svgContainerRef.current;
+      if (container) {
+        (container as HTMLDivElement).innerHTML = "";
+        const svgElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svgElement.setAttribute("width", "100%");
+        svgElement.setAttribute("height", "100%");
+        svgElement.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
+        (container as HTMLDivElement).appendChild(svgElement);
+        console.log("svgElement:", svgElement);
+        if (svgElement) {
+          svgElement.innerHTML = svgData;
+          console.log("svgData:", svgData);
+        }
+      }
+    }
+  }, [svgData, visibleLayers, viewBox, isDragging, dragStart]);
+
+  return <div ref={svgContainerRef} style={{ width: "100%", height: "100%" }} />;
+};
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
   const [viewBox, setViewBox] = useState("-5000 -3000 5000 3000");
   const [config, setConfig] = useState<PanelConfig>(defaultConfig);
-  const [topic, setTopic] = useState<string>("/visualizer_svgs");
+  const [topic, setTopic] = useState<string>("/aggregated_svgs");
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
   const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
   const [recv_num, setRecvNum] = useState(0);
 
-  const [layerTree, setLayerTree] = useState<Record<string, Layer>>({});
-  const handleSvgPrimitiveArray = (data: SvgPrimitiveArray) => {
-    const path = data.layer.split("/").filter((part) => part);
-    setRecvNum((prevNum) => prevNum + 1);
-    setLayerTree((prevTree) =>
-      updateLayerTree(prevTree, path, data.svg_primitives)
-    );
-  };
+  const [svgData, setSvgData] = useState<string>("");
+  const [testData, setTestData] = useState<string>("");
 
   // トピックが設定されたときにサブスクライブする
   useEffect(() => {
@@ -183,7 +247,8 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     if (messages) {
       for (const message of messages) {
         if (message.topic === topic) {
-          handleSvgPrimitiveArray(message.message as SvgPrimitiveArray);
+          setSvgData((message.message as { data: string }).data);
+          setRecvNum((prevNum) => prevNum + 1);
         }
       }
     }
@@ -195,72 +260,17 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   }, [renderDone]);
 
   return (
-    <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
+    <div style={{ width: "100%", height: "100%", overflow: "hidden", backgroundColor: config.backgroundColor }}>
       <div>
         <p>Topic: {topic}</p>
       </div>
       <div>
         <p>Receive num: {recv_num}</p>
       </div>
-      {Object.values(layerTree).map((layer) => (
-        <div key={layer.name}>
-          <p>{layer.name} : {layer.primitives.length}</p>
-          {/* {Object.values(layer.children).map((child: Layer) => (
-            <>
-              <p key={child.name}>{child.name} : {child.primitives?.length || 0}</p>
-              {child.primitives?.map((primitive: SvgPrimitive, index) => (
-                <p>{primitive.svg_text}</p>
-              ))}
-            </>
-          ))} */}
-        </div>
-      ))}
-      <svg
-        width="100%"
-        height="100%"
-        viewBox={viewBox}
-        style={{ backgroundColor: config.backgroundColor }}
-        onMouseDown={(e) => {
-          const startX = e.clientX;
-          const startY = e.clientY;
-          const [x, y, width, height] = viewBox.split(" ").map(Number);
-          const handleMouseMove = (e: MouseEvent) => {
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
-            const scaledDx = dx * width / 400;
-            const scaledDy = dy * height / 400;
-            setViewBox(`${x - scaledDx} ${y - scaledDy} ${width} ${height}`);
-          };
-          const handleMouseUp = () => {
-            document.removeEventListener("mousemove", handleMouseMove);
-            document.removeEventListener("mouseup", handleMouseUp);
-          };
-          document.addEventListener("mousemove", handleMouseMove);
-          document.addEventListener("mouseup", handleMouseUp);
-        }}
-        onWheel={(e) => {
-          e.preventDefault();
-          const [x, y, width, height] = viewBox.split(" ").map(Number);
-          const scale = e.deltaY > 0 ? 0.8 : 1.2;
-          let newWidth = width * scale;
-          let newHeight = height * scale;
-          const minWidth = width / 10;
-          const maxWidth = width * 10;
-          const minHeight = height / 10;
-          const maxHeight = height * 10;
-
-          newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
-          newHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
-
-          const centerX = x + width / 2;
-          const centerY = y + height / 2;
-          const newX = centerX - newWidth / 2;
-          const newY = centerY - newHeight / 2;
-          setViewBox(`${newX} ${newY} ${newWidth} ${newHeight}`);
-        }}
-      >
-        {Object.values(layerTree).map((layer) => renderLayer(layer))}
-      </svg>
+      <div>
+        <p>{svgData}</p>
+      </div>
+      <SvgRenderer svgData={svgData} visibleLayers={[]} />
     </div>
   );
 };
