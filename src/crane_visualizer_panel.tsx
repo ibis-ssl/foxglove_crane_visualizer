@@ -121,7 +121,7 @@ const SvgRenderer: React.FC<SvgRendererProps> = ({ svgData, visibleLayers }) => 
       }));
     };
 
-    const container = svgContainerRef.current;
+    const container = svgContainerRef.current as HTMLDivElement;
     if (container) {
       container.addEventListener("mousedown", handleMouseDown);
       container.addEventListener("mousemove", handleMouseMove);
@@ -136,33 +136,26 @@ const SvgRenderer: React.FC<SvgRendererProps> = ({ svgData, visibleLayers }) => 
       };
     }
 
-    if (svgContainerRef.current && svgData) {
-      const container = svgContainerRef.current;
-      if (container) {
-        (container as HTMLDivElement).innerHTML = "";
-        const svgElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svgElement.setAttribute("width", "100%");
-        svgElement.setAttribute("height", "100%");
-        svgElement.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
-        (container as HTMLDivElement).appendChild(svgElement);
-        console.log("svgElement:", svgElement);
-        if (svgElement) {
-          svgElement.innerHTML = svgData;
-          console.log("svgData:", svgData);
-        }
-      }
+if (svgContainerRef.current && svgData) {
+  const container = svgContainerRef.current;
+  if (container) {
+    container.innerHTML = svgData;
+    const svgElement = container.querySelector("svg");
+    if (svgElement) {
+      svgElement.setAttribute("width", "100%");
+      svgElement.setAttribute("height", "100%");
+      svgElement.setAttribute("viewBox", `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
     }
+  }
+}
   }, [svgData, visibleLayers, viewBox, isDragging, dragStart]);
 
   return <div ref={svgContainerRef} style={{ width: "100%", height: "100%" }} />;
 };
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
-  const [viewBox, setViewBox] = useState("-5000 -3000 5000 3000");
   const [config, setConfig] = useState<PanelConfig>(defaultConfig);
-  const [topic, setTopic] = useState<string>("/aggregated_svgs");
-  const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
-  const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
+  const [topic, setTopic] = useState<string>("/aggregated_svgs");const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
   const [recv_num, setRecvNum] = useState(0);
 
