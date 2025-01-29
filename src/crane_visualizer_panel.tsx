@@ -133,10 +133,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
               backgroundColor: { label: "背景色", input: "rgba", value: config.backgroundColor },
             },
           },
-          namespaces: {
-            label: "名前空間",
-            fields: createNamespaceFields(config.namespaces),
-          },
         },
         actionHandler: (action: SettingsTreeAction) => {
           const path = action.payload.path.join(".");
@@ -169,28 +165,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
 
     updatePanelSettings();
   }, [context, config]);
-
-  const createNamespaceFields = (namespaces: PanelConfig["namespaces"]) => {
-    const fields: { [key: string]: SettingsTreeField } = {};
-    const addFieldsRecursive = (ns: { [key: string]: any }, path: string[] = []) => {
-      for (const [name, { visible, children }] of Object.entries(ns)) {
-        const currentPath = [...path, name];
-        const key = currentPath.join(".");
-        fields[key] = {
-          label: name,
-          input: "boolean",
-          value: visible,
-          help: "名前空間の表示/非表示",
-        };
-        if (children) {
-          addFieldsRecursive(children, currentPath);
-        }
-      }
-    };
-    addFieldsRecursive(namespaces);
-    return fields;
-  };
-
 
   // メッセージ受信時の処理
   useLayoutEffect(() => {
