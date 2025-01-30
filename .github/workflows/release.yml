@@ -53,17 +53,16 @@ jobs:
       - name: Create .foxe file
         run: |
           npm run foxglove:package
-          mv ibisssl.foxglove-crane-visualizer-?.?.?.foxe foxglove-crane-visualizer.foxe
 
       - name: Create GitHub Release
         id: create_release
         run: |
-          gh release create ${{ steps.increment_version.outputs.new_version }} --title "Release ${{ steps.increment_version.outputs.new_version }}" --draft=false --prerelease=false
+          gh release create ${{ steps.increment_version.outputs.new_version }} --notes "Release ${{ steps.increment_version.outputs.new_version }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload .foxe file
         run: |
-          gh release upload ${{ steps.increment_version.outputs.new_version }} foxglove-crane-visualizer.foxe --name foxglove-crane-visualizer.foxe
+          gh release upload ${{ steps.increment_version.outputs.new_version }} ibisssl.foxglove-crane-visualizer-?.?.?.foxe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
