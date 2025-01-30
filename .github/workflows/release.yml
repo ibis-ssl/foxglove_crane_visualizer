@@ -64,10 +64,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload .foxe file
-        uses: actions/upload-release-asset@v1
+        run: |
+          gh release upload ${{ steps.create_release.outputs.release_id }} foxglove-crane-visualizer.foxe --name foxglove-crane-visualizer.foxe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          release_id: ${{ steps.create_release.outputs.release_id }}
-          asset_path: foxglove-crane-visualizer.foxe
-          asset_name: foxglove-crane-visualizer.foxe
