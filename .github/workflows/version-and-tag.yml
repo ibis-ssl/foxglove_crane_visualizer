@@ -38,7 +38,7 @@ jobs:
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          NEW_VERSION=$(npm version patch --json | jq -r '.[0]')
+          NEW_VERSION=$(npm version patch --json)
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Commit package.json
