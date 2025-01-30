@@ -18,15 +18,15 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build
-        run: npm run build
+        run: npm run foxglove:dev
 
       - name: Create .foxe file
         run: |
-          npm pack
-          mv *.tgz foxglove-crane-visualizer.foxe
+          npm run foxglove:package
+          mv ibisssl.foxglove-crane-visualizer-?.?.?.foxe foxglove-crane-visualizer.foxe
 
       - name: Create GitHub Release
         id: create_release
@@ -47,4 +47,3 @@ jobs:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: foxglove-crane-visualizer.foxe
           asset_name: foxglove-crane-visualizer.foxe
-          asset_content_type: application/octet-stream
