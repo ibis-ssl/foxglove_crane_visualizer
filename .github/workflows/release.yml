@@ -58,13 +58,12 @@ jobs:
       - name: Create GitHub Release
         id: create_release
         run: |
-          RELEASE_ID=$(gh release create v${{ steps.increment_version.outputs.new_version }} --title "Release v${{ steps.increment_version.outputs.new_version }}" --draft=false --prerelease=false | jq -r .id)
-          echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+          gh release create ${{ steps.increment_version.outputs.new_version }} --title "Release ${{ steps.increment_version.outputs.new_version }}" --draft=false --prerelease=false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload .foxe file
         run: |
-          gh release upload ${{ steps.create_release.outputs.release_id }} foxglove-crane-visualizer.foxe --name foxglove-crane-visualizer.foxe
+          gh release upload ${{ steps.increment_version.outputs.new_version }} foxglove-crane-visualizer.foxe --name foxglove-crane-visualizer.foxe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
