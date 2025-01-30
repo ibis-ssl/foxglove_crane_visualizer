@@ -36,18 +36,18 @@ jobs:
       - name: Increment version
         id: increment_version
         run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
           NEW_VERSION=$(npm version patch | jq -r .version)
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Commit package.json
         run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
           git add package.json
           git commit -m "Bump version to ${{ steps.increment_version.outputs.new_version }}"
 
       - name: Create tag
-        run: git tag v${{ steps.increment_version.outputs.new_version }}
+        run: git tag ${{ steps.increment_version.outputs.new_version }}
 
       - name: Push changes
         uses: ad-m/github-push-action@master
