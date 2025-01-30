@@ -41,14 +41,6 @@ jobs:
           NEW_VERSION=$(npm version patch --json)
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Commit package.json
-        run: |
-          git add .
-          git commit -m "Bump version to ${{ steps.increment_version.outputs.new_version }}"
-
-      - name: Create tag
-        run: git tag ${{ steps.increment_version.outputs.new_version }}
-
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
