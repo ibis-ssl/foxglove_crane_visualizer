@@ -18,7 +18,7 @@ interface SvgPrimitiveArray {
   svg_primitives: string[];
 }
 
-interface SvgLayerArray{
+interface SvgLayerArray {
   svg_primitive_arrays: SvgPrimitiveArray[];
 }
 
@@ -148,123 +148,123 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
 
   }, [context]);
 
-useEffect(() => {
-  if (messages) {
-    for (const message of messages) {
-      if (message.topic === topic) {
-        const msg = message.message as SvgLayerArray;
-        setLatestMsg(msg);
-        setRecvNum(recv_num + 1);
+  useEffect(() => {
+    if (messages) {
+      for (const message of messages) {
+        if (message.topic === topic) {
+          const msg = message.message as SvgLayerArray;
+          setLatestMsg(msg);
+          setRecvNum(recv_num + 1);
 
-        // 初期化時にconfig.namespacesを設定
-        setConfig((prevConfig) => {
-          const newNamespaces = { ...prevConfig.namespaces };
-          msg.svg_primitive_arrays.forEach((svg_primitive_array) => {
-            if (!newNamespaces[svg_primitive_array.layer]) {
-              newNamespaces[svg_primitive_array.layer] = { visible: true };
-            }
+          // 初期化時にconfig.namespacesを設定
+          setConfig((prevConfig) => {
+            const newNamespaces = { ...prevConfig.namespaces };
+            msg.svg_primitive_arrays.forEach((svg_primitive_array) => {
+              if (!newNamespaces[svg_primitive_array.layer]) {
+                newNamespaces[svg_primitive_array.layer] = { visible: true };
+              }
+            });
+            return { ...prevConfig, namespaces: newNamespaces };
           });
-          return { ...prevConfig, namespaces: newNamespaces };
-        });
+        }
       }
     }
-  }
-}, [messages]);
+  }, [messages]);
 
   // invoke the done callback once the render is complete
   useEffect(() => {
     renderDone?.();
   }, [renderDone]);
 
-const handleCheckboxChange = (layer: string) => {
-  setConfig((prevConfig) => {
-    const newNamespaces = { ...prevConfig.namespaces };
-    if (!newNamespaces[layer]) {
-      newNamespaces[layer] = { visible: true };
-    }
-    newNamespaces[layer].visible = !newNamespaces[layer].visible;
-    return { ...prevConfig, namespaces: newNamespaces };
-  });
-};
+  const handleCheckboxChange = (layer: string) => {
+    setConfig((prevConfig) => {
+      const newNamespaces = { ...prevConfig.namespaces };
+      if (!newNamespaces[layer]) {
+        newNamespaces[layer] = { visible: true };
+      }
+      newNamespaces[layer].visible = !newNamespaces[layer].visible;
+      return { ...prevConfig, namespaces: newNamespaces };
+    });
+  };
 
-return (
-  <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
-    <div>
-      {latest_msg && latest_msg.svg_primitive_arrays.map((svg_primitive_array) => (
-        <div key={svg_primitive_array.layer}>
-          <label>
-            <input
-              type="checkbox"
-              checked={config.namespaces[svg_primitive_array.layer]?.visible ?? true}
-              onChange={() => handleCheckboxChange(svg_primitive_array.layer)}
-            />
-            {svg_primitive_array.layer}
-          </label>
-        </div>
-      ))}
-    </div>
-    <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
       <div>
-        <p>Topic: {topic}</p>
-      </div>
-      <div>
-        <p>Receive num: {recv_num}</p>
-      </div>
-      <svg
-        width="100%"
-        height="100%"
-        viewBox={viewBox}
-        style={{ backgroundColor: config.backgroundColor }}
-        onMouseDown={(e) => {
-          const startX = e.clientX;
-          const startY = e.clientY;
-          const [x, y, width, height] = viewBox.split(" ").map(Number);
-          const handleMouseMove = (e: MouseEvent) => {
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
-            const scaledDx = dx * width / 400;
-            const scaledDy = dy * height / 400;
-            setViewBox(`${x - scaledDx} ${y - scaledDy} ${width} ${height}`);
-          };
-          const handleMouseUp = () => {
-            document.removeEventListener("mousemove", handleMouseMove);
-            document.removeEventListener("mouseup", handleMouseUp);
-          };
-          document.addEventListener("mousemove", handleMouseMove);
-          document.addEventListener("mouseup", handleMouseUp);
-        }}
-        onWheel={(e) => {
-          e.preventDefault();
-          const [x, y, width, height] = viewBox.split(" ").map(Number);
-          const scale = e.deltaY > 0 ? 0.8 : 1.2;
-          let newWidth = width * scale;
-          let newHeight = height * scale;
-          const minWidth = width / 10;
-          const maxWidth = width * 10;
-          const minHeight = height / 10;
-          const maxHeight = height * 10;
-
-          newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
-          newHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
-
-          const centerX = x + width / 2;
-          const centerY = y + height / 2;
-          const newX = centerX - newWidth / 2;
-          const newY = centerY - newHeight / 2;
-          setViewBox(`${newX} ${newY} ${newWidth} ${newHeight}`);
-        }}
-      >
-        {latest_msg && latest_msg.svg_primitive_arrays.map((svg_primitive_array, index) => (
-          <g key={svg_primitive_array.layer} style={{ display: config.namespaces[svg_primitive_array.layer]?.visible ? 'block' : 'none' }}>
-            {svg_primitive_array.svg_primitives.map((svg_primitive, index) => (
-              <g dangerouslySetInnerHTML= {{ __html: svg_primitive }} />
-            ))}
-          </g>
+        {latest_msg && latest_msg.svg_primitive_arrays.map((svg_primitive_array) => (
+          <div key={svg_primitive_array.layer}>
+            <label>
+              <input
+                type="checkbox"
+                checked={config.namespaces[svg_primitive_array.layer]?.visible ?? true}
+                onChange={() => handleCheckboxChange(svg_primitive_array.layer)}
+              />
+              {svg_primitive_array.layer}
+            </label>
+          </div>
         ))}
-      </svg>
+      </div>
+      <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
+        <div>
+          <p>Topic: {topic}</p>
+        </div>
+        <div>
+          <p>Receive num: {recv_num}</p>
+        </div>
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={viewBox}
+          style={{ backgroundColor: config.backgroundColor }}
+          onMouseDown={(e) => {
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const [x, y, width, height] = viewBox.split(" ").map(Number);
+            const handleMouseMove = (e: MouseEvent) => {
+              const dx = e.clientX - startX;
+              const dy = e.clientY - startY;
+              const scaledDx = dx * width / 400;
+              const scaledDy = dy * height / 400;
+              setViewBox(`${x - scaledDx} ${y - scaledDy} ${width} ${height}`);
+            };
+            const handleMouseUp = () => {
+              document.removeEventListener("mousemove", handleMouseMove);
+              document.removeEventListener("mouseup", handleMouseUp);
+            };
+            document.addEventListener("mousemove", handleMouseMove);
+            document.addEventListener("mouseup", handleMouseUp);
+          }}
+          onWheel={(e) => {
+            e.preventDefault();
+            const [x, y, width, height] = viewBox.split(" ").map(Number);
+            const scale = e.deltaY > 0 ? 1.2 : 0.8;
+            let newWidth = width * scale;
+            let newHeight = height * scale;
+            const minWidth = width / 10;
+            const maxWidth = width * 10;
+            const minHeight = height / 10;
+            const maxHeight = height * 10;
+
+            newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+            newHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+
+            const centerX = x + width / 2;
+            const centerY = y + height / 2;
+            const newX = centerX - newWidth / 2;
+            const newY = centerY - newHeight / 2;
+            setViewBox(`${newX} ${newY} ${newWidth} ${newHeight}`);
+          }}
+        >
+          {latest_msg && latest_msg.svg_primitive_arrays.map((svg_primitive_array, index) => (
+            <g key={svg_primitive_array.layer} style={{ display: config.namespaces[svg_primitive_array.layer]?.visible ? 'block' : 'none' }}>
+              {svg_primitive_array.svg_primitives.map((svg_primitive, index) => (
+                <g dangerouslySetInnerHTML={{ __html: svg_primitive }} />
+              ))}
+            </g>
+          ))}
+        </svg>
+      </div>
     </div>
-  </div>
-);
+  );
 };
 
 export function initPanel(context: PanelExtensionContext): () => void {
