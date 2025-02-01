@@ -189,20 +189,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
-      <div>
-        {latest_msg && latest_msg.svg_primitive_arrays.map((svg_primitive_array) => (
-          <div key={svg_primitive_array.layer}>
-            <label>
-              <input
-                type="checkbox"
-                checked={config.namespaces[svg_primitive_array.layer]?.visible ?? true}
-                onChange={() => handleCheckboxChange(svg_primitive_array.layer)}
-              />
-              {svg_primitive_array.layer}
-            </label>
-          </div>
-        ))}
-      </div>
       <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
         <div>
           <p>Topic: {topic}</p>
