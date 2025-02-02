@@ -63,6 +63,7 @@ jobs:
 
       - name: Upload .foxe file
         run: |
-          gh release upload ${{ steps.increment_version.outputs.new_version }} ibisssl.foxglove-crane-visualizer-?.?.?.foxe
+          gh release upload ${{ steps.increment_version.outputs.new_version }} ibisssl.foxglove-crane-visualizer-[0-9]*.[0-9]*.[0-9]*.foxe
+
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
