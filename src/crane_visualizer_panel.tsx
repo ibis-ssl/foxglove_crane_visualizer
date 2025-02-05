@@ -41,7 +41,7 @@ const defaultConfig: PanelConfig = {
 
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
-  const [viewBox, setViewBox] = useState("-5000 -3000 5000 3000");
+  const [viewBox, setViewBox] = useState("-5000 -3000 10000 6000");
   const [config, setConfig] = useState<PanelConfig>(defaultConfig);
   const [topic, setTopic] = useState<string>("/aggregated_svgs");
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
