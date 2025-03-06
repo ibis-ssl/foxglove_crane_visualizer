@@ -50,6 +50,24 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   const [recv_num, setRecvNum] = useState(0);
   const [latest_msg, setLatestMsg] = useState<SvgLayerArray>();
 
+  const resetViewBox = useCallback(() => {
+    setViewBox("-5000 -3000 10000 6000");
+  }, [setViewBox]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.key === "0") {
+        resetViewBox();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [resetViewBox]);
+
   // トピックが設定されたときにサブスクライブする
   useEffect(() => {
     const subscription: Subscription = { topic: topic };
