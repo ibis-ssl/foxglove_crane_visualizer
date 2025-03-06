@@ -25,6 +25,7 @@ interface SvgLayerArray {
 interface PanelConfig {
   backgroundColor: string;
   message: string;
+  viewBoxWidth: number;
   namespaces: {
     [key: string]: {
       visible: boolean;
@@ -36,6 +37,7 @@ interface PanelConfig {
 const defaultConfig: PanelConfig = {
   backgroundColor: "#585858ff",
   message: "",
+  viewBoxWidth: 10000,
   namespaces: {},
 };
 
@@ -51,13 +53,21 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   const [latest_msg, setLatestMsg] = useState<SvgLayerArray>();
 
   const resetViewBox = useCallback(() => {
-    setViewBox("-5000 -3000 10000 6000");
-  }, [setViewBox]);
+    const x = -config.viewBoxWidth / 2;
+    const aspectRatio = 0.6; // 元のアスペクト比 (6000 / 10000)
+    const height = config.viewBoxWidth * aspectRatio;
+    const y = -height / 2;
+    setViewBox(`${x} ${y} ${config.viewBoxWidth} ${height}`);
+  }, [setViewBox, config]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.key === "0") {
-        resetViewBox();
+        const x = -config.viewBoxWidth / 2;
+        const aspectRatio = 0.6; // 元のアスペクト比 (6000 / 10000)
+        const height = config.viewBoxWidth * aspectRatio;
+        const y = -height / 2;
+        setViewBox(`${x} ${y} ${config.viewBoxWidth} ${height}`);
       }
     };
 
@@ -66,7 +76,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [resetViewBox]);
+  }, [resetViewBox, config]);
 
   // トピックが設定されたときにサブスクライブする
   useEffect(() => {
@@ -94,6 +104,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
             fields: {
               topic: { label: "トピック名", input: "string", value: topic },
               backgroundColor: { label: "背景色", input: "rgba", value: config.backgroundColor },
+              viewBoxWidth: { label: "ViewBox 幅", input: "number", value: config.viewBoxWidth },
             },
           },
           namespaces: {
@@ -109,7 +120,12 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
                 setTopic(action.payload.value as string);
               } else if (path == "general.backgroundColor") {
                 setConfig((prevConfig) => ({ ...prevConfig, backgroundColor: action.payload.value as string }));
-              } else if (action.payload.path[0] == "namespaces") {
+              } else if (path == "general.viewBoxWidth") {
+                setConfig((prevConfig) => ({ ...prevConfig, viewBoxWidth: action.payload.value as number }));
+              } else if (path == "general.viewBoxHeight") {
+                setConfig((prevConfig) => ({ ...prevConfig, viewBoxHeight: action.payload.value as number }));
+              }
+              else if (action.payload.path[0] == "namespaces") {
                 const pathParts = path.split(".");
                 const namespacePath = pathParts.slice(1, -1);
                 const leafNamespace = pathParts[pathParts.length - 1];
@@ -164,7 +180,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     context.watch("topics");
     context.watch("currentFrame");
 
-  }, [context]);
+  }, [context, topic]);
 
   useEffect(() => {
     if (messages) {
