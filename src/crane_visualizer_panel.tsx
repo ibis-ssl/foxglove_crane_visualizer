@@ -1,5 +1,4 @@
-import * as React from "react";
-import { useCallback, useLayoutEffect, useState, useEffect, useMemo } from "react";
+import { useCallback, useLayoutEffect, useState, useEffect, FC, memo } from "react";
 import {
   PanelExtensionContext,
   SettingsTree,
@@ -8,10 +7,15 @@ import {
   MessageEvent,
   Topic,
   Subscription,
-  Immutable
+  Immutable,
 } from "@foxglove/studio";
 import ReactDOM from "react-dom";
 import { StrictMode } from "react";
+import { usePanZoom } from "./hooks/usePanZoom";
+import { usePanelConfig } from "./hooks/usePanelConfig"; // Hook import
+import { PanelConfig, NamespaceConfig } from "../settings_utils"; // Type imports
+import { createNamespaceFields, handleSettingsAction } from "../settings_utils"; // Import utils
+import { DEFAULT_TOPIC, DEFAULT_VIEWBOX_ASPECT_RATIO } from "../constants"; // Import constants
 
 interface SvgPrimitiveArray {
   layer: string; // "parent/child1/child2"のような階層パス
@@ -22,21 +26,10 @@ interface SvgLayerArray {
   svg_primitive_arrays: SvgPrimitiveArray[];
 }
 
-interface PanelConfig {
-  backgroundColor: string;
-  message: string;
-  viewBoxWidth: number;
-  namespaces: {
-    [key: string]: {
-      visible: boolean;
-      children?: { [key: string]: { visible: boolean; children?: any } };
-    };
-  };
-}
+// PanelConfig and NamespaceConfig are now imported from ../settings_utils.ts
 
-const defaultConfig: PanelConfig = {
+const defaultConfigForHook: PanelConfig = {
   backgroundColor: "#585858ff",
-  message: "",
   viewBoxWidth: 10000,
   namespaces: {},
 };
@@ -44,57 +37,62 @@ const defaultConfig: PanelConfig = {
 
 const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context }) => {
   const [viewBox, setViewBox] = useState("-5000 -3000 10000 6000");
-  const [config, setConfig] = useState<PanelConfig>(defaultConfig);
-  const [topic, setTopic] = useState<string>("/aggregated_svgs");
-  const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
-  const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
+  const { handleMouseDown, handleWheel } = usePanZoom({ initialViewBox: viewBox, setViewBox });
+  const {
+    config,
+    setBackgroundColor,
+    setViewBoxWidth,
+    setNamespaceVisibility,
+    initializeNamespaces,
+  } = usePanelConfig({ defaultConfig: defaultConfigForHook, initialState: context.initialState as Partial<PanelConfig> });
+  const [topic, setTopic] = useState<string>(DEFAULT_TOPIC); // Use constant for default topic
+  const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>(); // Stores list of all topics
+  const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>(); // Stores current frame messages
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
-  const [recv_num, setRecvNum] = useState(0);
-  const [latest_msg, setLatestMsg] = useState<SvgLayerArray>();
+  const [receivedMessageCount, setReceivedMessageCount] = useState(0); // Renamed from recv_num
+  const [latest_msg, setLatestMsg] = useState<SvgLayerArray>(); // Stores the latest SvgLayerArray message
 
+  // Resets the SVG viewBox to its default position and zoom level based on the current config.viewBoxWidth.
   const resetViewBox = useCallback(() => {
     const x = -config.viewBoxWidth / 2;
-    const aspectRatio = 0.6; // 元のアスペクト比 (6000 / 10000)
-    const height = config.viewBoxWidth * aspectRatio;
+    const height = config.viewBoxWidth * DEFAULT_VIEWBOX_ASPECT_RATIO; // Use constant
     const y = -height / 2;
     setViewBox(`${x} ${y} ${config.viewBoxWidth} ${height}`);
-  }, [setViewBox, config]);
+  }, [setViewBox, config.viewBoxWidth]);
 
+  // Effect to handle 'Ctrl+0' for resetting the view.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.key === "0") {
-        const x = -config.viewBoxWidth / 2;
-        const aspectRatio = 0.6; // 元のアスペクト比 (6000 / 10000)
-        const height = config.viewBoxWidth * aspectRatio;
-        const y = -height / 2;
-        setViewBox(`${x} ${y} ${config.viewBoxWidth} ${height}`);
+        event.preventDefault(); // Prevent browser default action for Ctrl+0
+        resetViewBox();
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
-
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [resetViewBox, config]);
+  }, [resetViewBox]); // Depends on resetViewBox callback
 
-  // トピックが設定されたときにサブスクライブする
+  // Subscribes to the selected topic when the topic or context changes.
   useEffect(() => {
-    const subscription: Subscription = { topic: topic };
-    context.subscribe([subscription]);
-  }, [topic]);
+    // Panel is responsible for managing its subscriptions
+    context.subscribe([{ topic }]);
+    return () => {
+      // Unsubscribe when the topic changes or the panel is unmounted
+      context.unsubscribe([{ topic }]);
+    };
+  }, [topic, context]); // Added context as a dependency, as context.subscribe/unsubscribe are used.
 
+  // Saves the current panel configuration when it changes.
   useLayoutEffect(() => {
     context.saveState(config);
-  }, [config, context]);
+  }, [config, context]); // Depends on config and context.saveState
 
-  useLayoutEffect(() => {
-    const savedConfig = context.initialState as PanelConfig | undefined;
-    if (savedConfig) {
-      setConfig((prevConfig) => ({ ...prevConfig, ...savedConfig, namespaces: savedConfig.namespaces || prevConfig.namespaces }));
-    }
-  }, [context, setConfig]);
+  // The useLayoutEffect that loaded context.initialState is now handled by usePanelConfig.
 
+  // Updates the panel settings editor when config or topic-related states change.
   useEffect(() => {
     const updatePanelSettings = () => {
       const panelSettings: SettingsTree = {
@@ -102,182 +100,103 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           general: {
             label: "General",
             fields: {
-              topic: { label: "トピック名", input: "string", value: topic },
-              backgroundColor: { label: "背景色", input: "rgba", value: config.backgroundColor },
-              viewBoxWidth: { label: "ViewBox 幅", input: "number", value: config.viewBoxWidth },
+              topic: { label: "Topic Name", input: "string", value: topic }, //トピック名 -> Topic Name
+              backgroundColor: { label: "Background Color", input: "rgba", value: config.backgroundColor }, //背景色 -> Background Color
+              viewBoxWidth: { label: "ViewBox Width", input: "number", value: config.viewBoxWidth }, //ViewBox 幅 -> ViewBox Width
             },
           },
           namespaces: {
-            label: "名前空間",
+            label: "Namespaces", //名前空間 -> Namespaces
             fields: createNamespaceFields(config.namespaces),
           },
         },
         actionHandler: (action: SettingsTreeAction) => {
-          const path = action.payload.path.join(".");
-          switch (action.action) {
-            case "update":
-              if (path == "general.topic") {
-                setTopic(action.payload.value as string);
-              } else if (path == "general.backgroundColor") {
-                setConfig((prevConfig) => ({ ...prevConfig, backgroundColor: action.payload.value as string }));
-              } else if (path == "general.viewBoxWidth") {
-                setConfig((prevConfig) => ({ ...prevConfig, viewBoxWidth: action.payload.value as number }));
-              } else if (path == "general.viewBoxHeight") {
-                setConfig((prevConfig) => ({ ...prevConfig, viewBoxHeight: action.payload.value as number }));
-              }
-              else if (action.payload.path[0] == "namespaces") {
-                const pathParts = path.split(".");
-                const namespacePath = pathParts.slice(1, -1);
-                const leafNamespace = pathParts[pathParts.length - 1];
-                let currentNs = config.namespaces;
-                for (const ns of namespacePath) {
-                  currentNs = currentNs[ns].children || {};
-                }
-                currentNs[leafNamespace].visible = action.payload.value as boolean;
-              }
-              break;
-            case "perform-node-action":
-              break;
-          }
+          handleSettingsAction(action, {
+            setTopic,
+            setBackgroundColor,
+            setViewBoxWidth,
+            setNamespaceVisibility,
+          });
         },
       };
       context.updatePanelSettingsEditor(panelSettings);
     };
 
     updatePanelSettings();
-  }, [context, config]);
+  }, [context, config, topic, setTopic, setBackgroundColor, setViewBoxWidth, setNamespaceVisibility]); // Added setTopic to dependencies
 
-  const createNamespaceFields = (namespaces: PanelConfig["namespaces"]) => {
-    const fields: { [key: string]: SettingsTreeField } = {};
-    const addFieldsRecursive = (ns: { [key: string]: any }, path: string[] = []) => {
-      for (const [name, { visible, children }] of Object.entries(ns)) {
-        const currentPath = [...path, name];
-        const key = currentPath.join(".");
-        fields[key] = {
-          label: name,
-          input: "boolean",
-          value: visible,
-          help: "名前空間の表示/非表示",
-        };
-        if (children) {
-          addFieldsRecursive(children, currentPath);
-        }
+  // createNamespaceFields moved to ../settings_utils.ts
+
+
+  // This layout effect sets up the callback for Foxglove Studio to signal rendering.
+  // It provides `done` which should be called when the panel has completed its rendering pass.
+  // It also receives the current frame's messages and the list of all available topics.
+  useLayoutEffect(() => {
+    // renderState contains currentFrame and topics.
+    // done is a callback to signal that rendering is complete.
+    context.onRender = (renderState, done) => {
+      setRenderDone(() => done); // Store the done callback to be called after state updates.
+      setMessages(renderState.currentFrame); // Update messages from the current frame.
+      if (renderState.topics) { // Update the list of all available topics.
+          setTopics(renderState.topics);
       }
     };
-    addFieldsRecursive(namespaces);
-    return fields;
-  };
 
+    context.watch("topics"); // Watch for changes in topic list.
+    context.watch("currentFrame"); // Watch for new messages.
 
-  // メッセージ受信時の処理
-  useLayoutEffect(() => {
-    context.onRender = (renderState, done) => {
-      setRenderDone(() => done);
-      setMessages(renderState.currentFrame);
-      setTopics(renderState.topics);
-    };
+  }, [context]); // Effect only needs to run once to set up the onRender handler, and if context changes.
 
-    context.watch("topics");
-    context.watch("currentFrame");
-
-  }, [context, topic]);
-
+  // Processes incoming messages when `messages` or `topic` state changes.
+  // It filters messages for the selected topic, updates the latest message,
+  // increments a counter, and initializes namespaces based on received SVG layers.
   useEffect(() => {
     if (messages) {
       for (const message of messages) {
         if (message.topic === topic) {
           const msg = message.message as SvgLayerArray;
           setLatestMsg(msg);
-          setRecvNum(recv_num + 1);
+          setReceivedMessageCount((prevCount) => prevCount + 1); // Use new setter
 
-          // 初期化時にconfig.namespacesを設定
-          setConfig((prevConfig) => {
-            const newNamespaces = { ...prevConfig.namespaces };
-            msg.svg_primitive_arrays.forEach((svg_primitive_array) => {
-              if (!newNamespaces[svg_primitive_array.layer]) {
-                newNamespaces[svg_primitive_array.layer] = { visible: true };
-              }
-            });
-            return { ...prevConfig, namespaces: newNamespaces };
-          });
+          const layers = msg.svg_primitive_arrays.map(arr => arr.layer);
+          initializeNamespaces(layers); // Initialize namespaces from the new message
         }
       }
     }
-  }, [messages]);
+  }, [messages, topic, initializeNamespaces]); // Depends on messages, topic, and initializeNamespaces.
 
-  // invoke the done callback once the render is complete
+  // This effect calls the `done` callback received from `onRender` after the panel has processed
+  // new messages and updated its state, signaling to Foxglove Studio that the render pass is complete.
   useEffect(() => {
-    renderDone?.();
-  }, [renderDone]);
+    if (renderDone) {
+      renderDone();
+    }
+  }, [renderDone, latest_msg, config]); // Call done when renderDone is set and after relevant states (latest_msg, config) are updated.
 
-  const handleCheckboxChange = (layer: string) => {
-    setConfig((prevConfig) => {
-      const newNamespaces = { ...prevConfig.namespaces };
-      if (!newNamespaces[layer]) {
-        newNamespaces[layer] = { visible: true };
-      }
-      newNamespaces[layer].visible = !newNamespaces[layer].visible;
-      return { ...prevConfig, namespaces: newNamespaces };
-    });
-  };
+// InfoDisplay component to show Topic and Received Message Count
+const InfoDisplay: FC<{ topic: string; receivedMessageCount: number }> = memo(({ topic, receivedMessageCount }) => (
+  <div style={{ padding: "0.25rem 0.5rem", backgroundColor: "#222222", color: "#cccccc", display:"flex", gap:"1rem" }}>
+    <p>Topic: {topic}</p>
+    <p>Receive num: {receivedMessageCount}</p>
+  </div>
+));
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
-        <div>
-          <p>Topic: {topic}</p>
-        </div>
-        <div>
-          <p>Receive num: {recv_num}</p>
-        </div>
+      <InfoDisplay topic={topic} receivedMessageCount={receivedMessageCount} />
+      <div style={{ flexGrow: 1, overflow: "hidden" }}> 
+        {/* flexGrow: 1 allows this div to take remaining space */}
         <svg
           width="100%"
           height="100%"
           viewBox={viewBox}
           style={{ backgroundColor: config.backgroundColor }}
-          onMouseDown={(e) => {
-            const startX = e.clientX;
-            const startY = e.clientY;
-            const [x, y, width, height] = viewBox.split(" ").map(Number);
-            const handleMouseMove = (e: MouseEvent) => {
-              const dx = e.clientX - startX;
-              const dy = e.clientY - startY;
-              const scaledDx = dx * width / 400;
-              const scaledDy = dy * height / 400;
-              setViewBox(`${x - scaledDx} ${y - scaledDy} ${width} ${height}`);
-            };
-            const handleMouseUp = () => {
-              document.removeEventListener("mousemove", handleMouseMove);
-              document.removeEventListener("mouseup", handleMouseUp);
-            };
-            document.addEventListener("mousemove", handleMouseMove);
-            document.addEventListener("mouseup", handleMouseUp);
-          }}
-          onWheel={(e) => {
-            e.preventDefault();
-            const [x, y, width, height] = viewBox.split(" ").map(Number);
-            const scale = e.deltaY > 0 ? 1.2 : 0.8;
-            let newWidth = width * scale;
-            let newHeight = height * scale;
-            const minWidth = width / 10;
-            const maxWidth = width * 10;
-            const minHeight = height / 10;
-            const maxHeight = height * 10;
-
-            newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
-            newHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
-
-            const centerX = x + width / 2;
-            const centerY = y + height / 2;
-            const newX = centerX - newWidth / 2;
-            const newY = centerY - newHeight / 2;
-            setViewBox(`${newX} ${newY} ${newWidth} ${newHeight}`);
-          }}
+          {...{ onMouseDown: handleMouseDown, onWheel: handleWheel }}
         >
-          {latest_msg && latest_msg.svg_primitive_arrays.map((svg_primitive_array, index) => (
+          {latest_msg && latest_msg.svg_primitive_arrays.map((svg_primitive_array) => (
             <g key={svg_primitive_array.layer} style={{ display: config.namespaces[svg_primitive_array.layer]?.visible ? 'block' : 'none' }}>
-              {svg_primitive_array.svg_primitives.map((svg_primitive, index) => (
-                <g dangerouslySetInnerHTML={{ __html: svg_primitive }} />
+              {svg_primitive_array.svg_primitives.map((svg_primitive) => (
+                <g key={svg_primitive} dangerouslySetInnerHTML={{ __html: svg_primitive }} />
               ))}
             </g>
           ))}
@@ -292,7 +211,7 @@ export function initPanel(context: PanelExtensionContext): () => void {
     <StrictMode>
       <CraneVisualizer context={context} />
     </StrictMode>,
-    context.panelElement,
+    context.panelElement
   );
   return () => {
     ReactDOM.unmountComponentAtNode(context.panelElement);
