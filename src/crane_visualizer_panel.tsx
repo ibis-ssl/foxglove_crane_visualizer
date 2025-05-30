@@ -80,9 +80,8 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     // Panel is responsible for managing its subscriptions
     context.subscribe([{ topic }]);
     return () => {
-      // Unsubscribe when the topic changes or the panel is unmounted
-      // context.unsubscribe expects an array of subscriptionIds (topic strings)
-      context.unsubscribe([topic]);
+      // Unsubscribe from all topics when the topic changes or the panel is unmounted
+      context.unsubscribeAll();
     };
   }, [topic, context]); // Added context as a dependency, as context.subscribe/unsubscribe are used.
 
