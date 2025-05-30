@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useState, useEffect, FC, memo } from "react";
+import React, { useCallback, useLayoutEffect, useState, useEffect, FC, memo } from "react";
 import {
   PanelExtensionContext,
   SettingsTree,
@@ -13,9 +13,9 @@ import ReactDOM from "react-dom";
 import { StrictMode } from "react";
 import { usePanZoom } from "./hooks/usePanZoom";
 import { usePanelConfig } from "./hooks/usePanelConfig"; // Hook import
-import { PanelConfig, NamespaceConfig } from "../settings_utils"; // Type imports
-import { createNamespaceFields, handleSettingsAction } from "../settings_utils"; // Import utils
-import { DEFAULT_TOPIC, DEFAULT_VIEWBOX_ASPECT_RATIO } from "../constants"; // Import constants
+import { PanelConfig, NamespaceConfig } from "./settings_utils"; // Type imports
+import { createNamespaceFields, handleSettingsAction } from "./settings_utils"; // Import utils
+import { DEFAULT_TOPIC, DEFAULT_VIEWBOX_ASPECT_RATIO } from "./constants"; // Import constants
 
 interface SvgPrimitiveArray {
   layer: string; // "parent/child1/child2"のような階層パス
@@ -81,7 +81,8 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     context.subscribe([{ topic }]);
     return () => {
       // Unsubscribe when the topic changes or the panel is unmounted
-      context.unsubscribe([{ topic }]);
+      // context.unsubscribe expects an array of subscriptionIds (topic strings)
+      context.unsubscribe([topic]);
     };
   }, [topic, context]); // Added context as a dependency, as context.subscribe/unsubscribe are used.
 
