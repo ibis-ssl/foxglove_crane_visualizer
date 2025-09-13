@@ -184,6 +184,29 @@ const composeMessagesAtTime = (targetTime: number): SvgLayerArray | undefined =>
 };
 ```
 
+### フォールバック戦略（スナップショット不在時）
+スナップショットが履歴に存在しない時刻へのシークでは、更新トピックのみから仮状態を合成します。
+
+- 適用方針: `replace` と `clear` を時系列に適用、`append` は無視
+- 前提: `replace` はそのレイヤーの完全表現を含む（自己完結）
+- 目的: 長距離の巻き戻しやキー フレーム欠損時でも視覚破綻を避ける
+
+```typescript
+// aggregated が無い場合の簡易合成
+const updates = getUpdatesInTimeRange(-Infinity, targetTime); // 昇順
+const layerMap = new Map<string, string[]>();
+for (const updateArray of updates) {
+  for (const u of updateArray.updates) {
+    switch (u.operation) {
+      case 'replace': layerMap.set(u.layer, [...u.svg_primitives]); break;
+      case 'clear':   layerMap.set(u.layer, []); break;
+      case 'append':  /* ベース不在では無視 */ break;
+    }
+  }
+}
+return buildFinalState(layerMap); // 空なら undefined
+```
+
 ## 📈 パフォーマンス最適化
 
 ### メモリ管理戦略

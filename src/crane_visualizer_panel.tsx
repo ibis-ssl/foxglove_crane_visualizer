@@ -22,6 +22,11 @@ interface SvgLayerArray {
   svg_primitive_arrays: SvgPrimitiveArray[];
 }
 
+// 互換性用: 新しいスナップショット形式（SvgSnapshot）の可能性
+interface SvgSnapshotCompat {
+  layers?: SvgPrimitiveArray[];
+}
+
 // /visualizer_svgsトピック用のインターフェース
 interface SvgLayerUpdate {
   layer: string; // "parent/child1/child2"のような階層パス
@@ -32,6 +37,46 @@ interface SvgLayerUpdate {
 interface SvgUpdateArray {
   updates: SvgLayerUpdate[];
 }
+
+// 正規化ヘルパ（スナップショット）
+const normalizeSnapshot = (raw: any): SvgLayerArray | undefined => {
+  try {
+    const arrays: SvgPrimitiveArray[] | undefined = Array.isArray(raw?.svg_primitive_arrays)
+      ? (raw.svg_primitive_arrays as SvgPrimitiveArray[])
+      : Array.isArray((raw as SvgSnapshotCompat)?.layers)
+      ? ((raw as SvgSnapshotCompat).layers as SvgPrimitiveArray[])
+      : undefined;
+    if (!arrays) return undefined;
+    const filtered = arrays
+      .filter((a) => a && a.layer && Array.isArray(a.svg_primitives))
+      .map((a) => ({ layer: a.layer, svg_primitives: a.svg_primitives }));
+    return { svg_primitive_arrays: filtered };
+  } catch {
+    return undefined;
+  }
+};
+
+// 正規化ヘルパ（更新: 旧互換としてスナップショット形をreplaceに変換）
+const normalizeUpdates = (raw: any): SvgUpdateArray | undefined => {
+  try {
+    if (raw && Array.isArray(raw.updates)) {
+      return raw as SvgUpdateArray;
+    }
+    const arrays: SvgPrimitiveArray[] | undefined = Array.isArray(raw?.svg_primitive_arrays)
+      ? (raw.svg_primitive_arrays as SvgPrimitiveArray[])
+      : Array.isArray((raw as SvgSnapshotCompat)?.layers)
+      ? ((raw as SvgSnapshotCompat).layers as SvgPrimitiveArray[])
+      : undefined;
+    if (!arrays) return undefined;
+    return {
+      updates: arrays
+        .filter((a) => a && a.layer && Array.isArray(a.svg_primitives))
+        .map((a) => ({ layer: a.layer, operation: "replace", svg_primitives: a.svg_primitives })),
+    };
+  } catch {
+    return undefined;
+  }
+};
 
 interface PanelConfig {
   backgroundColor: string;
@@ -74,7 +119,8 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   
   // 複数トピックのメッセージ履歴管理
   const [aggregatedMessages, setAggregatedMessages] = useState<Map<number, MessageEvent>>(new Map());
-  const [updateMessages, setUpdateMessages] = useState<Map<number, MessageEvent>>(new Map());
+  // 同一ミリ秒に複数の更新が来る可能性に対応するため配列で保持
+  const [updateMessages, setUpdateMessages] = useState<Map<number, MessageEvent[]>>(new Map());
   
   // 時間軸管理
   const [seekTime, setSeekTime] = useState<number | undefined>();
@@ -98,17 +144,13 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
       for (const [timestamp, message] of aggregatedMessages) {
         if (timestamp <= targetTime && timestamp > latestAggregatedTime) {
           latestAggregatedTime = timestamp;
-          latestAggregatedMsg = message.message as SvgLayerArray;
+          latestAggregatedMsg = normalizeSnapshot(message.message);
         }
-      }
-      
-      if (!latestAggregatedMsg) {
-        return undefined;
       }
       
       // ベースとなるレイヤーデータをコピー（バリデーション付き）
       const layerMap = new Map<string, string[]>();
-      if (latestAggregatedMsg.svg_primitive_arrays) {
+      if (latestAggregatedMsg && latestAggregatedMsg.svg_primitive_arrays) {
         latestAggregatedMsg.svg_primitive_arrays.forEach(array => {
           if (array && array.layer && Array.isArray(array.svg_primitives)) {
             layerMap.set(array.layer, [...array.svg_primitives]);
@@ -121,17 +163,20 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
         return latestAggregatedMsg;
       }
       
-      // latestAggregatedTime以降、targetTime以下のupdateメッセージを適用
+      // 適用対象となるupdateメッセージを抽出
       const relevantUpdates: Array<[number, SvgUpdateArray]> = [];
-      for (const [timestamp, message] of updateMessages) {
-        if (timestamp > latestAggregatedTime && timestamp <= targetTime) {
-          try {
-            const updateArray = message.message as SvgUpdateArray;
-            if (updateArray && updateArray.updates) {
-              relevantUpdates.push([timestamp, updateArray]);
+      for (const [timestamp, messagesAtTs] of updateMessages) {
+        // latestAggregatedMsg がない場合は履歴の最古から targetTime 以下を採用
+        // ある場合は aggregated の直後から targetTime 以下を採用
+        const lowerBound = latestAggregatedMsg ? latestAggregatedTime : Number.NEGATIVE_INFINITY;
+        if (timestamp > lowerBound && timestamp <= targetTime) {
+          for (const message of messagesAtTs) {
+            try {
+              const updateArray = normalizeUpdates(message.message);
+              if (updateArray) relevantUpdates.push([timestamp, updateArray]);
+            } catch (error) {
+              console.warn(`Invalid update message at timestamp ${timestamp}:`, error);
             }
-          } catch (error) {
-            console.warn(`Invalid update message at timestamp ${timestamp}:`, error);
           }
         }
       }
@@ -151,6 +196,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           
           const currentPrimitives = layerMap.get(update.layer) || [];
           
+          // フォールバック時（aggregated 不在）には replace/clear のみ適用。append は無視。
           switch (update.operation) {
             case "replace":
               if (Array.isArray(update.svg_primitives)) {
@@ -158,11 +204,14 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
               }
               break;
             case "append":
-              if (Array.isArray(update.svg_primitives)) {
-                layerMap.set(update.layer, [...currentPrimitives, ...update.svg_primitives]);
+              if (latestAggregatedMsg) {
+                if (Array.isArray(update.svg_primitives)) {
+                  layerMap.set(update.layer, [...currentPrimitives, ...update.svg_primitives]);
+                }
               }
               break;
             case "clear":
+              // ベースがなくても clear 自体は適用可能（結果は空レイヤー）
               layerMap.set(update.layer, []);
               break;
             default:
@@ -182,6 +231,10 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           }))
       };
       
+      // aggregated が無く、適用後も何も残らない場合は undefined を返す
+      if (!latestAggregatedMsg && result.svg_primitive_arrays.length === 0) {
+        return undefined;
+      }
       return result;
     } catch (error) {
       console.error('Error in composeMessagesAtTime:', error);
@@ -209,18 +262,16 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
       return filtered;
     });
     
-    // updateMessagesのクリーンアップ
+    // updateMessagesのクリーンアップ（配列保持）
     setUpdateMessages(prev => {
-      const filtered = new Map();
+      const filtered = new Map<number, MessageEvent[]>();
       const entries = Array.from(prev.entries())
         .filter(([timestamp]) => timestamp >= cutoffTime)
-        .sort(([a], [b]) => b - a) // 新しい順にソート
-        .slice(0, config.maxHistorySize); // 最大サイズで制限
-      
-      entries.forEach(([timestamp, message]) => {
-        filtered.set(timestamp, message);
+        .sort(([a], [b]) => b - a)
+        .slice(0, config.maxHistorySize);
+      entries.forEach(([timestamp, msgs]) => {
+        filtered.set(timestamp, msgs);
       });
-      
       return filtered;
     });
   }, [config.maxHistoryDuration, config.maxHistorySize]);
@@ -428,28 +479,34 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
         const timestamp = message.receiveTime.sec * 1000 + message.receiveTime.nsec / 1000000;
         
         if (message.topic === config.aggregatedTopic) {
-          const msg = message.message as SvgLayerArray;
-          
-          // aggregatedメッセージの履歴保存
-          setAggregatedMessages(prev => new Map(prev.set(timestamp, message)));
-          
-          // 最新のメッセージを設定
-          setLatestMsg(msg);
-          setRecvNum(recv_num + 1);
+        const msg = normalizeSnapshot(message.message);
+        
+        // aggregatedメッセージの履歴保存
+        setAggregatedMessages(prev => new Map(prev.set(timestamp, message)));
+        
+        // 最新のメッセージを設定
+        if (msg) setLatestMsg(msg);
+        setRecvNum(recv_num + 1);
 
-          // 初期化時にconfig.namespacesを設定
-          setConfig((prevConfig) => {
-            const newNamespaces = { ...prevConfig.namespaces };
-            msg.svg_primitive_arrays.forEach((svg_primitive_array) => {
-              if (!newNamespaces[svg_primitive_array.layer]) {
-                newNamespaces[svg_primitive_array.layer] = { visible: true };
-              }
-            });
-            return { ...prevConfig, namespaces: newNamespaces };
+        // 初期化時にconfig.namespacesを設定
+        setConfig((prevConfig) => {
+          const newNamespaces = { ...prevConfig.namespaces };
+          msg?.svg_primitive_arrays.forEach((svg_primitive_array) => {
+            if (!newNamespaces[svg_primitive_array.layer]) {
+              newNamespaces[svg_primitive_array.layer] = { visible: true };
+            }
           });
+          return { ...prevConfig, namespaces: newNamespaces };
+        });
         } else if (config.enableUpdateTopic && message.topic === config.updateTopic) {
-          // updateメッセージの履歴保存
-          setUpdateMessages(prev => new Map(prev.set(timestamp, message)));
+          // updateメッセージの履歴保存（同一msに複数を保持）
+          setUpdateMessages(prev => {
+            const map = new Map(prev);
+            const arr = map.get(timestamp) ?? [];
+            arr.push(message);
+            map.set(timestamp, arr);
+            return map;
+          });
         }
       }
     }
@@ -476,10 +533,50 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     }
   }, [seekTime, composeMessagesAtTime]);
 
+  // リアルタイム更新用：メッセージ到着時に最新時刻で合成（シーク未実行時）
+  useEffect(() => {
+    if (!config.enableUpdateTopic) return;
+    if (seekTime !== undefined) return; // シーク中は上のエフェクトに任せる
+    // 最新のタイムスタンプを選択
+    let latestTs = -1;
+    for (const [ts] of aggregatedMessages) {
+      if (ts > latestTs) latestTs = ts;
+    }
+    for (const [ts] of updateMessages) {
+      if (ts > latestTs) latestTs = ts;
+    }
+    if (latestTs >= 0) {
+      const composed = composeMessagesAtTime(latestTs);
+      setCurrentDisplayMsg(composed);
+    }
+  }, [messages, aggregatedMessages, updateMessages, seekTime, config.enableUpdateTopic, composeMessagesAtTime]);
+
+  // シーク時（currentTime 定義時）も、メッセージ到着で同じ時刻の合成を更新
+  useEffect(() => {
+    if (!config.enableUpdateTopic) return;
+    if (seekTime === undefined) return;
+    const composed = composeMessagesAtTime(seekTime);
+    setCurrentDisplayMsg(composed);
+  }, [messages, aggregatedMessages, updateMessages, seekTime, config.enableUpdateTopic, composeMessagesAtTime]);
+
   // invoke the done callback once the render is complete
   useEffect(() => {
     renderDone?.();
   }, [renderDone]);
+
+  // currentDisplayMsg に含まれる新規レイヤーを namespaces に反映
+  useEffect(() => {
+    if (!currentDisplayMsg) return;
+    setConfig((prevConfig) => {
+      const newNamespaces = { ...prevConfig.namespaces };
+      currentDisplayMsg.svg_primitive_arrays.forEach((svg_primitive_array) => {
+        if (!newNamespaces[svg_primitive_array.layer]) {
+          newNamespaces[svg_primitive_array.layer] = { visible: true };
+        }
+      });
+      return { ...prevConfig, namespaces: newNamespaces };
+    });
+  }, [currentDisplayMsg]);
 
   const handleCheckboxChange = (layer: string) => {
     setConfig((prevConfig) => {
@@ -549,8 +646,10 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           }}
         >
           {(() => {
-            // seekTimeが設定されている場合は合成されたメッセージ、そうでなければ最新メッセージを表示
-            const displayMsg = seekTime !== undefined ? currentDisplayMsg : latest_msg;
+            // 更新トピック有効時は合成結果を優先（シーク有無に関わらず）
+            const displayMsg = config.enableUpdateTopic
+              ? (currentDisplayMsg ?? latest_msg)
+              : latest_msg;
             
             return displayMsg?.svg_primitive_arrays.map((svg_primitive_array, index) => (
               <g key={svg_primitive_array.layer} style={{ display: config.namespaces[svg_primitive_array.layer]?.visible ? 'block' : 'none' }}>

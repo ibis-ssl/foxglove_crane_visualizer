@@ -57,6 +57,27 @@ const targetTime = (50 * 60 + 32) * 1000 + 500;
 const composedState = composeMessagesAtTime(targetTime);
 ```
 
+### スナップショット不在時のフォールバック
+スナップショット（/aggregated_svgs）が履歴内に存在しない場合でも、更新トピック（/visualizer_svgs）のみから仮状態を構築します。
+
+- 適用方針: `replace` と `clear` のみを時系列に適用し、`append` は無視
+- ねらい: `replace` を自己完結（レイヤー全体の完全置換）とすることで、ベース不在でも意味のある表示を維持
+- 効果: 長距離巻き戻しやスナップショット欠損時の視覚破綻を回避
+
+```typescript
+// aggregated が見つからない場合の合成（概念）
+const updates = getUpdatesInRange(-Infinity, targetTime).sort((a, b) => a.time - b.time);
+const layerMap = new Map<string, string[]>();
+for (const u of updates) {
+  switch (u.operation) {
+    case 'replace': layerMap.set(u.layer, [...u.svg_primitives]); break;
+    case 'clear':   layerMap.set(u.layer, []); break;
+    case 'append':  /* ベース不在では無視 */ break;
+  }
+}
+return buildFinalState(layerMap); // 空なら undefined
+```
+
 ## 🏗️ 実装アーキテクチャ
 
 ### 時間管理システム
