@@ -32,6 +32,7 @@ interface SvgLayerUpdate {
   layer: string; // "parent/child1/child2"のような階層パス
   operation: "append" | "replace" | "clear"; // 操作タイプ
   svg_primitives: string[]; // SVGプリミティブ配列
+  duration?: number; // 有効期限(秒)。0または未定義=無限
 }
 
 interface SvgUpdateArray {
