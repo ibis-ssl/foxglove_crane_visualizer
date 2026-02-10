@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useCallback, useLayoutEffect, useState, useEffect, useMemo } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, useEffect, useMemo } from "react";
 import {
   PanelExtensionContext,
   SettingsTree,
@@ -126,6 +126,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   // 時間軸管理
   const [seekTime, setSeekTime] = useState<number | undefined>();
   const [currentDisplayMsg, setCurrentDisplayMsg] = useState<SvgLayerArray | undefined>();
+  const svgRef = useRef<SVGSVGElement>(null);
 
   const resetViewBox = useCallback(() => {
     const x = -config.viewBoxWidth / 2;
@@ -603,6 +604,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           {seekTime !== undefined && <p>Seek Time: {new Date(seekTime).toISOString()}</p>}
         </div>
         <svg
+          ref={svgRef}
           width="100%"
           height="100%"
           viewBox={viewBox}
@@ -611,11 +613,14 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
             const startX = e.clientX;
             const startY = e.clientY;
             const [x, y, width, height] = viewBox.split(" ").map(Number);
+            const rect = svgRef.current?.getBoundingClientRect();
+            const svgPixelWidth = rect?.width ?? width;
+            const svgPixelHeight = rect?.height ?? height;
             const handleMouseMove = (e: MouseEvent) => {
               const dx = e.clientX - startX;
               const dy = e.clientY - startY;
-              const scaledDx = dx * width / 400;
-              const scaledDy = dy * height / 400;
+              const scaledDx = dx * (width / svgPixelWidth);
+              const scaledDy = dy * (height / svgPixelHeight);
               setViewBox(`${x - scaledDx} ${y - scaledDy} ${width} ${height}`);
             };
             const handleMouseUp = () => {
