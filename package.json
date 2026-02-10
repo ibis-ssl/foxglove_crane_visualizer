@@ -1,6 +1,6 @@
 {
   "name": "foxglove-crane-visualizer",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "description": "RoboCup SSL Visualization Panel for Foxglove Studio",
   "publisher": "ibis-ssl",
   "keywords": [
