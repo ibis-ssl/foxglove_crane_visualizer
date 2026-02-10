@@ -39,6 +39,126 @@ interface SvgUpdateArray {
   updates: SvgLayerUpdate[];
 }
 
+// レフェリーメッセージ関連インターフェース
+interface RefereeTeamInfo {
+  name: string;
+  score: number;
+  red_cards: number;
+  yellow_cards: number;
+  yellow_card_times: number[];
+  timeouts: number;
+  timeout_time: number;
+  goalkeeper: number;
+  foul_counter: number;
+  max_allowed_bots: number;
+}
+
+interface RefereeMessage {
+  stage: { value: number };
+  command: { value: number };
+  stage_time_left: number;
+  yellow: RefereeTeamInfo;
+  blue: RefereeTeamInfo;
+}
+
+// ステージ短縮名マップ
+const STAGE_SHORT_NAMES: Record<number, string> = {
+  0: "NORMAL 1ST HALF",
+  1: "NORMAL 1ST HALF",
+  2: "NORMAL HALF TIME",
+  3: "NORMAL 2ND HALF",
+  4: "NORMAL 2ND HALF",
+  5: "BREAK",
+  6: "OT 1ST HALF",
+  7: "OT 1ST HALF",
+  8: "OT HALF TIME",
+  9: "OT 2ND HALF",
+  10: "OT 2ND HALF",
+  11: "BREAK",
+  12: "PENALTY",
+  13: "PENALTY",
+  14: "POST GAME",
+};
+
+// コマンド表示名マップ
+const COMMAND_NAMES: Record<number, string> = {
+  0: "HALT",
+  1: "STOP",
+  2: "NORMAL START",
+  3: "FORCE START",
+  4: "PREPARE KICKOFF YELLOW",
+  5: "PREPARE KICKOFF BLUE",
+  6: "PREPARE PENALTY YELLOW",
+  7: "PREPARE PENALTY BLUE",
+  8: "DIRECT FREE YELLOW",
+  9: "DIRECT FREE BLUE",
+  12: "TIMEOUT YELLOW",
+  13: "TIMEOUT BLUE",
+  16: "BALL PLACEMENT YELLOW",
+  17: "BALL PLACEMENT BLUE",
+};
+
+// コマンドカテゴリマップ
+const COMMAND_CATEGORIES: Record<number, string> = {
+  0: "halt",
+  1: "stop",
+  2: "running",
+  3: "running",
+  4: "yellow_action",
+  5: "blue_action",
+  6: "yellow_action",
+  7: "blue_action",
+  8: "yellow_action",
+  9: "blue_action",
+  12: "yellow_action",
+  13: "blue_action",
+  16: "yellow_action",
+  17: "blue_action",
+};
+
+// スコアボードカラーパレット
+const SCOREBOARD_COLORS = {
+  bg: "rgba(10, 10, 20, 0.85)",
+  border: "rgba(255, 255, 255, 0.1)",
+  text: "#FFFFFF",
+  textDim: "rgba(255, 255, 255, 0.6)",
+  yellow: "#FFD700",
+  yellowBg: "rgba(255, 215, 0, 0.15)",
+  blue: "#4D9FFF",
+  blueBg: "rgba(77, 159, 255, 0.15)",
+  halt: "#FF4444",
+  stop: "#FF8C00",
+  running: "#44FF44",
+  timerWarning: "#FF6B6B",
+  timerNegative: "#FF4444",
+} as const;
+
+// カテゴリ色マップ
+const CATEGORY_COLORS: Record<string, string> = {
+  halt: SCOREBOARD_COLORS.halt,
+  stop: SCOREBOARD_COLORS.stop,
+  running: SCOREBOARD_COLORS.running,
+  yellow_action: SCOREBOARD_COLORS.yellow,
+  blue_action: SCOREBOARD_COLORS.blue,
+};
+
+// マイクロ秒 → "MM:SS" 形式
+const formatStageTime = (microseconds: number): string => {
+  const negative = microseconds < 0;
+  const totalSeconds = Math.abs(Math.floor(microseconds / 1_000_000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const formatted = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return negative ? `-${formatted}` : formatted;
+};
+
+// HEXカラー → RGB値文字列
+const hexToRgb = (hex: string): string => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return "255, 255, 255";
+  return `${parseInt(result[1]!, 16)}, ${parseInt(result[2]!, 16)}, ${parseInt(result[3]!, 16)}`;
+};
+
 // 正規化ヘルパ（スナップショット）
 const normalizeSnapshot = (raw: any): SvgLayerArray | undefined => {
   try {
@@ -88,6 +208,8 @@ interface PanelConfig {
   enableUpdateTopic: boolean; // /visualizer_svgsトピックの有効/無効
   maxHistoryDuration: number; // 履歴保持期間（秒）
   maxHistorySize: number; // 最大履歴サイズ
+  refereeTopic: string; // レフェリートピック名
+  enableScoreboard: boolean; // スコアボード表示の有効/無効
   namespaces: {
     [key: string]: {
       visible: boolean;
@@ -105,7 +227,241 @@ const defaultConfig: PanelConfig = {
   enableUpdateTopic: true,
   maxHistoryDuration: 300, // 5分間
   maxHistorySize: 1000, // 最大1000メッセージ
+  refereeTopic: "/referee",
+  enableScoreboard: true,
   namespaces: {},
+};
+
+// スコアボードオーバーレイコンポーネント
+const ScoreboardOverlay: React.FC<{ refereeData: RefereeMessage }> = ({ refereeData }) => {
+  const stage = refereeData.stage?.value ?? 0;
+  const command = refereeData.command?.value ?? 1;
+  const stageTimeLeft = refereeData.stage_time_left ?? 0;
+  const yellow = refereeData.yellow;
+  const blue = refereeData.blue;
+
+  const stageName = STAGE_SHORT_NAMES[stage] ?? "UNKNOWN";
+  const commandName = COMMAND_NAMES[command] ?? "UNKNOWN";
+  const commandCategory = COMMAND_CATEGORIES[command] ?? "stop";
+  const categoryColor = CATEGORY_COLORS[commandCategory] ?? SCOREBOARD_COLORS.stop;
+
+  const timeStr = formatStageTime(stageTimeLeft);
+  const totalSeconds = Math.floor(Math.abs(stageTimeLeft) / 1_000_000);
+  const isTimeWarning = stageTimeLeft > 0 && totalSeconds < 60;
+  const isTimeNegative = stageTimeLeft < 0;
+
+  const containerStyle: React.CSSProperties = {
+    position: "absolute",
+    bottom: 12,
+    left: "50%",
+    transform: "translateX(-50%)",
+    pointerEvents: "none",
+    zIndex: 100,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 3,
+    fontFamily: "'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif",
+  };
+
+  const stageBadgeStyle: React.CSSProperties = {
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: 1.5,
+    textTransform: "uppercase" as const,
+    color: SCOREBOARD_COLORS.textDim,
+    background: "rgba(255,255,255,0.08)",
+    padding: "3px 14px",
+    borderRadius: 10,
+  };
+
+  const mainBoardStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "stretch",
+    background: SCOREBOARD_COLORS.bg,
+    border: `1px solid ${SCOREBOARD_COLORS.border}`,
+    borderRadius: 10,
+    boxShadow: "0 4px 24px rgba(0,0,0,0.5), 0 0 1px rgba(255,255,255,0.1)",
+    overflow: "hidden",
+    minWidth: 380,
+  };
+
+  const teamSectionStyle = (teamColor: string, teamBg: string): React.CSSProperties => ({
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "10px 18px",
+    background: teamBg,
+    borderLeft: `3px solid ${teamColor}`,
+    borderRight: `3px solid ${teamColor}`,
+    minWidth: 110,
+  });
+
+  const teamNameStyle: React.CSSProperties = {
+    fontSize: 16,
+    fontWeight: 700,
+    color: SCOREBOARD_COLORS.text,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    maxWidth: 120,
+  };
+
+  const badgeRowStyle: React.CSSProperties = {
+    display: "flex",
+    gap: 4,
+    marginTop: 4,
+    alignItems: "center",
+  };
+
+  const cardBadgeStyle = (color: string): React.CSSProperties => ({
+    width: 11,
+    height: 15,
+    borderRadius: 2,
+    backgroundColor: color,
+    border: "1px solid rgba(0,0,0,0.3)",
+  });
+
+  const cardCountStyle: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 700,
+    color: SCOREBOARD_COLORS.textDim,
+    marginLeft: -1,
+  };
+
+  const centerStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "10px 20px",
+    minWidth: 100,
+  };
+
+  const scoreStyle: React.CSSProperties = {
+    fontSize: 40,
+    fontWeight: 800,
+    color: SCOREBOARD_COLORS.text,
+    lineHeight: 1,
+    letterSpacing: 3,
+  };
+
+  const timerStyle: React.CSSProperties = {
+    fontSize: 18,
+    fontWeight: 600,
+    fontVariantNumeric: "tabular-nums",
+    color: isTimeNegative
+      ? SCOREBOARD_COLORS.timerNegative
+      : isTimeWarning
+        ? SCOREBOARD_COLORS.timerWarning
+        : SCOREBOARD_COLORS.textDim,
+    marginTop: 4,
+  };
+
+  const commandBarStyle: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "3px 14px",
+    background: "rgba(10, 10, 20, 0.7)",
+    borderRadius: 10,
+    border: `1px solid ${categoryColor}40`,
+  };
+
+  const commandDotStyle: React.CSSProperties = {
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    backgroundColor: categoryColor,
+    boxShadow: `0 0 6px ${categoryColor}, 0 0 12px ${categoryColor}80`,
+  };
+
+  const commandTextStyle: React.CSSProperties = {
+    fontSize: 13,
+    fontWeight: 700,
+    letterSpacing: 1,
+    color: categoryColor,
+  };
+
+  const timeoutBadgeStyle: React.CSSProperties = {
+    fontSize: 10,
+    fontWeight: 600,
+    color: SCOREBOARD_COLORS.textDim,
+    background: "rgba(255,255,255,0.06)",
+    padding: "2px 5px",
+    borderRadius: 3,
+  };
+
+  const renderCards = (yellowCards: number, redCards: number) => (
+    <div style={badgeRowStyle}>
+      {yellowCards > 0 && (
+        <>
+          <div style={cardBadgeStyle("#FFD700")} />
+          {yellowCards > 1 && <span style={cardCountStyle}>{yellowCards}</span>}
+        </>
+      )}
+      {redCards > 0 && (
+        <>
+          <div style={cardBadgeStyle("#FF4444")} />
+          {redCards > 1 && <span style={cardCountStyle}>{redCards}</span>}
+        </>
+      )}
+      {yellow && (
+        <span style={timeoutBadgeStyle}>TO:{yellow.timeouts ?? 0}</span>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={containerStyle}>
+      <div style={stageBadgeStyle}>{stageName}</div>
+      <div style={mainBoardStyle}>
+        <div style={teamSectionStyle(SCOREBOARD_COLORS.yellow, SCOREBOARD_COLORS.yellowBg)}>
+          <div style={{ ...teamNameStyle, textShadow: `0 0 8px ${SCOREBOARD_COLORS.yellow}60` }}>
+            {yellow?.name ?? "YELLOW"}
+          </div>
+          {renderCards(yellow?.yellow_cards ?? 0, yellow?.red_cards ?? 0)}
+        </div>
+        <div style={centerStyle}>
+          <div style={scoreStyle}>
+            <span style={{ textShadow: `0 0 12px ${SCOREBOARD_COLORS.yellow}80` }}>
+              {yellow?.score ?? 0}
+            </span>
+            <span style={{ color: SCOREBOARD_COLORS.textDim, margin: "0 6px", fontSize: 28 }}>:</span>
+            <span style={{ textShadow: `0 0 12px ${SCOREBOARD_COLORS.blue}80` }}>
+              {blue?.score ?? 0}
+            </span>
+          </div>
+          <div style={timerStyle}>{timeStr}</div>
+        </div>
+        <div style={teamSectionStyle(SCOREBOARD_COLORS.blue, SCOREBOARD_COLORS.blueBg)}>
+          <div style={{ ...teamNameStyle, textShadow: `0 0 8px ${SCOREBOARD_COLORS.blue}60` }}>
+            {blue?.name ?? "BLUE"}
+          </div>
+          <div style={badgeRowStyle}>
+            {(blue?.yellow_cards ?? 0) > 0 && (
+              <>
+                <div style={cardBadgeStyle("#FFD700")} />
+                {(blue?.yellow_cards ?? 0) > 1 && <span style={cardCountStyle}>{blue?.yellow_cards}</span>}
+              </>
+            )}
+            {(blue?.red_cards ?? 0) > 0 && (
+              <>
+                <div style={cardBadgeStyle("#FF4444")} />
+                {(blue?.red_cards ?? 0) > 1 && <span style={cardCountStyle}>{blue?.red_cards}</span>}
+              </>
+            )}
+            <span style={timeoutBadgeStyle}>TO:{blue?.timeouts ?? 0}</span>
+          </div>
+        </div>
+      </div>
+      <div style={commandBarStyle}>
+        <div style={commandDotStyle} />
+        <span style={commandTextStyle}>{commandName}</span>
+      </div>
+    </div>
+  );
 };
 
 
@@ -127,6 +483,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   const [seekTime, setSeekTime] = useState<number | undefined>();
   const [currentDisplayMsg, setCurrentDisplayMsg] = useState<SvgLayerArray | undefined>();
   const svgRef = useRef<SVGSVGElement>(null);
+  const [refereeData, setRefereeData] = useState<RefereeMessage | undefined>();
 
   const resetViewBox = useCallback(() => {
     const x = -config.viewBoxWidth / 2;
@@ -311,8 +668,11 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     if (config.enableUpdateTopic) {
       subscriptions.push({ topic: config.updateTopic });
     }
+    if (config.enableScoreboard) {
+      subscriptions.push({ topic: config.refereeTopic });
+    }
     context.subscribe(subscriptions);
-  }, [config.aggregatedTopic, config.updateTopic, config.enableUpdateTopic]);
+  }, [config.aggregatedTopic, config.updateTopic, config.enableUpdateTopic, config.refereeTopic, config.enableScoreboard]);
 
   useLayoutEffect(() => {
     context.saveState(config);
@@ -344,11 +704,23 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
                 value: config.updateTopic,
                 help: "レイヤーごとの更新を含む高頻度トピック" 
               },
-              enableUpdateTopic: { 
-                label: "更新トピック有効", 
-                input: "boolean", 
+              enableUpdateTopic: {
+                label: "更新トピック有効",
+                input: "boolean",
                 value: config.enableUpdateTopic,
-                help: "無効にするとスナップショットのみ使用" 
+                help: "無効にするとスナップショットのみ使用"
+              },
+              refereeTopic: {
+                label: "レフェリートピック",
+                input: "string",
+                value: config.refereeTopic,
+                help: "レフェリー情報のトピック名",
+              },
+              enableScoreboard: {
+                label: "スコアボード表示",
+                input: "boolean",
+                value: config.enableScoreboard,
+                help: "レフェリー情報のスコアボードオーバーレイ",
               },
             },
           },
@@ -400,6 +772,10 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
                 setConfig((prevConfig) => ({ ...prevConfig, updateTopic: action.payload.value as string }));
               } else if (path == "topics.enableUpdateTopic") {
                 setConfig((prevConfig) => ({ ...prevConfig, enableUpdateTopic: action.payload.value as boolean }));
+              } else if (path == "topics.refereeTopic") {
+                setConfig((prevConfig) => ({ ...prevConfig, refereeTopic: action.payload.value as string }));
+              } else if (path == "topics.enableScoreboard") {
+                setConfig((prevConfig) => ({ ...prevConfig, enableScoreboard: action.payload.value as boolean }));
               } else if (path == "performance.maxHistoryDuration") {
                 setConfig((prevConfig) => ({ ...prevConfig, maxHistoryDuration: action.payload.value as number }));
               } else if (path == "performance.maxHistorySize") {
@@ -509,10 +885,12 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
             map.set(timestamp, arr);
             return map;
           });
+        } else if (config.enableScoreboard && message.topic === config.refereeTopic) {
+          setRefereeData(message.message as unknown as RefereeMessage);
         }
       }
     }
-  }, [messages, config.aggregatedTopic, config.updateTopic, config.enableUpdateTopic]);
+  }, [messages, config.aggregatedTopic, config.updateTopic, config.enableUpdateTopic, config.refereeTopic, config.enableScoreboard]);
 
   // seekTimeが変更された時のメッセージ合成処理
   useEffect(() => {
@@ -593,16 +971,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ width: "100%", height: "100%", overflow: "hidden" }}>
-        <div>
-          <p>Aggregated Topic: {config.aggregatedTopic}</p>
-          {config.enableUpdateTopic && <p>Update Topic: {config.updateTopic}</p>}
-        </div>
-        <div>
-          <p>Receive num: {recv_num}</p>
-          <p>History: Aggregated({aggregatedMessages.size}), Updates({updateMessages.size})</p>
-          {seekTime !== undefined && <p>Seek Time: {new Date(seekTime).toISOString()}</p>}
-        </div>
+      <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
         <svg
           ref={svgRef}
           width="100%"
@@ -666,6 +1035,9 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
             ));
           })()}
         </svg>
+        {config.enableScoreboard && refereeData && (
+          <ScoreboardOverlay refereeData={refereeData} />
+        )}
       </div>
     </div>
   );
