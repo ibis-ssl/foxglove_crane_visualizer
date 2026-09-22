@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useCallback, useLayoutEffect, useRef, useState, useEffect, useMemo } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, useEffect } from "react";
 import {
   PanelExtensionContext,
   SettingsTree,
@@ -227,6 +227,161 @@ const normalizeUpdates = (raw: any): SvgUpdateArray | undefined => {
   } catch {
     return undefined;
   }
+};
+
+type PrimitiveCommand = {
+  type: "circle" | "line" | "rect" | "text" | "polyline" | "polygon" | "path";
+  fill?: string;
+  fillOpacity?: number;
+  stroke?: string;
+  strokeOpacity?: number;
+  strokeWidth?: number;
+  cx?: number;
+  cy?: number;
+  r?: number;
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  points?: Array<{ x: number; y: number }>;
+  text?: string;
+  fontSize?: number;
+  textAnchor?: CanvasTextAlign;
+  path?: Path2D;
+};
+
+const SVG_ATTR_RE = {
+  fill: /(?:^|\s)fill="([^"]*)"/,
+  fillOpacity: /fill-opacity="([^"]*)"/,
+  stroke: /(?:^|\s)stroke="([^"]*)"/,
+  strokeOpacity: /stroke-opacity="([^"]*)"/,
+  strokeWidth: /stroke-width="([^"]*)"/,
+  cx: /(?:^|\s)cx="([^"]*)"/,
+  cy: /(?:^|\s)cy="([^"]*)"/,
+  r: /(?:^|\s)r="([^"]*)"/,
+  x1: /(?:^|\s)x1="([^"]*)"/,
+  y1: /(?:^|\s)y1="([^"]*)"/,
+  x2: /(?:^|\s)x2="([^"]*)"/,
+  y2: /(?:^|\s)y2="([^"]*)"/,
+  x: /(?:^|\s)x="([^"]*)"/,
+  y: /(?:^|\s)y="([^"]*)"/,
+  width: /(?:^|\s)width="([^"]*)"/,
+  height: /(?:^|\s)height="([^"]*)"/,
+  points: /(?:^|\s)points="([^"]*)"/,
+  d: /(?:^|\s)d="([^"]*)"/,
+  fontSize: /font-size="([^"]*)"/,
+  textAnchor: /text-anchor="([^"]*)"/,
+  textContent: /<text[^>]*>([\s\S]*?)<\/text>/,
+} as const;
+
+const readNumberAttr = (s: string, re: RegExp, fallback = 0): number => {
+  const match = re.exec(s);
+  if (!match) return fallback;
+  const value = Number.parseFloat(match[1] ?? "");
+  return Number.isFinite(value) ? value : fallback;
+};
+
+const readStringAttr = (s: string, re: RegExp, fallback = ""): string => {
+  const match = re.exec(s);
+  return match?.[1] ?? fallback;
+};
+
+const parsePoints = (pointsStr: string): Array<{ x: number; y: number }> => {
+  const nums = pointsStr
+    .trim()
+    .split(/[\s,]+/)
+    .map((value) => Number.parseFloat(value))
+    .filter((value) => Number.isFinite(value));
+  const points: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i + 1 < nums.length; i += 2) {
+    points.push({ x: nums[i]!, y: nums[i + 1]! });
+  }
+  return points;
+};
+
+const parsePrimitiveCommand = (primitive: string): PrimitiveCommand | undefined => {
+  const s = primitive.trim();
+  const style = {
+    fill: readStringAttr(s, SVG_ATTR_RE.fill, "none"),
+    fillOpacity: readNumberAttr(s, SVG_ATTR_RE.fillOpacity, 1),
+    stroke: readStringAttr(s, SVG_ATTR_RE.stroke, "none"),
+    strokeOpacity: readNumberAttr(s, SVG_ATTR_RE.strokeOpacity, 1),
+    strokeWidth: readNumberAttr(s, SVG_ATTR_RE.strokeWidth, 1),
+  };
+
+  if (s.startsWith("<circle")) {
+    return {
+      type: "circle",
+      cx: readNumberAttr(s, SVG_ATTR_RE.cx),
+      cy: readNumberAttr(s, SVG_ATTR_RE.cy),
+      r: readNumberAttr(s, SVG_ATTR_RE.r),
+      ...style,
+    };
+  }
+  if (s.startsWith("<line")) {
+    return {
+      type: "line",
+      x1: readNumberAttr(s, SVG_ATTR_RE.x1),
+      y1: readNumberAttr(s, SVG_ATTR_RE.y1),
+      x2: readNumberAttr(s, SVG_ATTR_RE.x2),
+      y2: readNumberAttr(s, SVG_ATTR_RE.y2),
+      ...style,
+    };
+  }
+  if (s.startsWith("<rect")) {
+    return {
+      type: "rect",
+      x: readNumberAttr(s, SVG_ATTR_RE.x),
+      y: readNumberAttr(s, SVG_ATTR_RE.y),
+      width: readNumberAttr(s, SVG_ATTR_RE.width),
+      height: readNumberAttr(s, SVG_ATTR_RE.height),
+      ...style,
+    };
+  }
+  if (s.startsWith("<polyline")) {
+    return {
+      type: "polyline",
+      points: parsePoints(readStringAttr(s, SVG_ATTR_RE.points)),
+      ...style,
+      fill: "none",
+    };
+  }
+  if (s.startsWith("<polygon")) {
+    return {
+      type: "polygon",
+      points: parsePoints(readStringAttr(s, SVG_ATTR_RE.points)),
+      ...style,
+    };
+  }
+  if (s.startsWith("<path")) {
+    const d = readStringAttr(s, SVG_ATTR_RE.d);
+    if (!d) return undefined;
+    return {
+      type: "path",
+      path: new Path2D(d),
+      ...style,
+    };
+  }
+  if (s.startsWith("<text")) {
+    const textAnchorRaw = readStringAttr(s, SVG_ATTR_RE.textAnchor, "start");
+    const textAnchor: CanvasTextAlign =
+      textAnchorRaw === "middle" ? "center" : textAnchorRaw === "end" ? "right" : "left";
+    return {
+      type: "text",
+      x: readNumberAttr(s, SVG_ATTR_RE.x),
+      y: readNumberAttr(s, SVG_ATTR_RE.y),
+      text: readStringAttr(s, SVG_ATTR_RE.textContent),
+      fontSize: readNumberAttr(s, SVG_ATTR_RE.fontSize, 100),
+      textAnchor,
+      fill: readStringAttr(s, SVG_ATTR_RE.fill, "#ffffff"),
+      fillOpacity: readNumberAttr(s, SVG_ATTR_RE.fillOpacity, 1),
+    };
+  }
+  return undefined;
 };
 
 interface PanelConfig {
@@ -688,7 +843,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
   const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
-  const [recv_num, setRecvNum] = useState(0);
   const [latest_msg, setLatestMsg] = useState<SvgLayerArray>();
   
   // 複数トピックのメッセージ履歴管理
@@ -699,9 +853,13 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   // 時間軸管理
   const [seekTime, setSeekTime] = useState<number | undefined>();
   const [currentDisplayMsg, setCurrentDisplayMsg] = useState<SvgLayerArray | undefined>();
-  const svgRef = useRef<SVGSVGElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDraggingRef = useRef(false);
   const [refereeData, setRefereeData] = useState<RefereeMessage | undefined>();
+  const primitiveCacheRef = useRef<Map<string, PrimitiveCommand | undefined>>(new Map());
+  const pendingUpdateMessagesRef = useRef<MessageEvent[]>([]);
+  const coalesceTimerRef = useRef<number | undefined>(undefined);
+  const redrawNeededRef = useRef(true);
 
   // grSim制御用状態
   const [grsimMode, setGrsimMode] = useState<GrSimPlacementMode>({ type: "none" });
@@ -740,6 +898,249 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
   useEffect(() => {
     setRobotDir(config.grsimDefaultRobotDir);
   }, [config.grsimDefaultRobotDir]);
+
+  const invalidateRedraw = useCallback(() => {
+    redrawNeededRef.current = true;
+  }, []);
+
+  const parseViewBox = useCallback((): { x: number; y: number; width: number; height: number } => {
+    const [x, y, width, height] = viewBox.split(" ").map(Number);
+    return { x, y, width, height };
+  }, [viewBox]);
+
+  const getCanvasViewport = useCallback(
+    (canvasRect: { width: number; height: number }, vb: { x: number; y: number; width: number; height: number }) => {
+      const scale = Math.min(canvasRect.width / vb.width, canvasRect.height / vb.height);
+      const offsetX = (canvasRect.width - vb.width * scale) / 2;
+      const offsetY = (canvasRect.height - vb.height * scale) / 2;
+      return { scale, offsetX, offsetY };
+    },
+    [],
+  );
+
+  const getOrParsePrimitive = useCallback((primitive: string): PrimitiveCommand | undefined => {
+    const cache = primitiveCacheRef.current;
+    if (cache.has(primitive)) {
+      return cache.get(primitive);
+    }
+    const cmd = parsePrimitiveCommand(primitive);
+    if (cache.size >= 20000) {
+      const keys = Array.from(cache.keys()).slice(0, 5000);
+      keys.forEach((key) => cache.delete(key));
+    }
+    cache.set(primitive, cmd);
+    return cmd;
+  }, []);
+
+  const screenToSvgCoords = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const vb = parseViewBox();
+    const { scale, offsetX, offsetY } = getCanvasViewport(rect, vb);
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const svgX = vb.x + (px - offsetX) / scale;
+    const svgY = vb.y + (py - offsetY) / scale;
+    return { x: svgX, y: svgY };
+  }, [getCanvasViewport, parseViewBox]);
+
+  const drawPrimitive = useCallback((ctx: CanvasRenderingContext2D, cmd: PrimitiveCommand) => {
+    const applyFill = () => {
+      if (cmd.fill && cmd.fill !== "none") {
+        ctx.globalAlpha = cmd.fillOpacity ?? 1;
+        ctx.fillStyle = cmd.fill;
+        ctx.fill();
+      }
+    };
+    const applyStroke = () => {
+      if (cmd.stroke && cmd.stroke !== "none") {
+        ctx.globalAlpha = cmd.strokeOpacity ?? 1;
+        ctx.strokeStyle = cmd.stroke;
+        ctx.lineWidth = cmd.strokeWidth ?? 1;
+        ctx.stroke();
+      }
+    };
+
+    ctx.save();
+    ctx.globalAlpha = 1;
+    if (cmd.type === "circle") {
+      ctx.beginPath();
+      ctx.arc(cmd.cx ?? 0, cmd.cy ?? 0, cmd.r ?? 0, 0, Math.PI * 2);
+      applyFill();
+      applyStroke();
+    } else if (cmd.type === "line") {
+      ctx.beginPath();
+      ctx.moveTo(cmd.x1 ?? 0, cmd.y1 ?? 0);
+      ctx.lineTo(cmd.x2 ?? 0, cmd.y2 ?? 0);
+      applyStroke();
+    } else if (cmd.type === "rect") {
+      ctx.beginPath();
+      ctx.rect(cmd.x ?? 0, cmd.y ?? 0, cmd.width ?? 0, cmd.height ?? 0);
+      applyFill();
+      applyStroke();
+    } else if (cmd.type === "polyline") {
+      const points = cmd.points ?? [];
+      if (points.length > 0) {
+        ctx.beginPath();
+        ctx.moveTo(points[0]!.x, points[0]!.y);
+        for (let i = 1; i < points.length; i++) {
+          ctx.lineTo(points[i]!.x, points[i]!.y);
+        }
+        applyStroke();
+      }
+    } else if (cmd.type === "polygon") {
+      const points = cmd.points ?? [];
+      if (points.length > 0) {
+        ctx.beginPath();
+        ctx.moveTo(points[0]!.x, points[0]!.y);
+        for (let i = 1; i < points.length; i++) {
+          ctx.lineTo(points[i]!.x, points[i]!.y);
+        }
+        ctx.closePath();
+        applyFill();
+        applyStroke();
+      }
+    } else if (cmd.type === "path" && cmd.path) {
+      if (cmd.fill && cmd.fill !== "none") {
+        ctx.globalAlpha = cmd.fillOpacity ?? 1;
+        ctx.fillStyle = cmd.fill;
+        ctx.fill(cmd.path);
+      }
+      if (cmd.stroke && cmd.stroke !== "none") {
+        ctx.globalAlpha = cmd.strokeOpacity ?? 1;
+        ctx.strokeStyle = cmd.stroke;
+        ctx.lineWidth = cmd.strokeWidth ?? 1;
+        ctx.stroke(cmd.path);
+      }
+    } else if (cmd.type === "text") {
+      ctx.globalAlpha = cmd.fillOpacity ?? 1;
+      ctx.fillStyle = cmd.fill ?? "#fff";
+      ctx.font = `${cmd.fontSize ?? 100}px sans-serif`;
+      ctx.textAlign = cmd.textAnchor ?? "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(cmd.text ?? "", cmd.x ?? 0, cmd.y ?? 0);
+    }
+    ctx.restore();
+  }, []);
+
+  const drawCanvasScene = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const desiredWidth = Math.max(1, Math.round(rect.width * dpr));
+    const desiredHeight = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== desiredWidth || canvas.height !== desiredHeight) {
+      canvas.width = desiredWidth;
+      canvas.height = desiredHeight;
+    }
+
+    const vb = parseViewBox();
+    const displayMsg = config.enableUpdateTopic ? (currentDisplayMsg ?? latest_msg) : latest_msg;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = config.backgroundColor;
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, rect.width, rect.height);
+    ctx.clip();
+
+    const { scale, offsetX, offsetY } = getCanvasViewport(rect, vb);
+    ctx.setTransform(
+      scale * dpr,
+      0,
+      0,
+      scale * dpr,
+      (offsetX - vb.x * scale) * dpr,
+      (offsetY - vb.y * scale) * dpr,
+    );
+
+    displayMsg?.svg_primitive_arrays.forEach((layerArray) => {
+      if (!config.namespaces[layerArray.layer]?.visible) return;
+      layerArray.svg_primitives.forEach((primitive) => {
+        const cmd = getOrParsePrimitive(primitive);
+        if (cmd) drawPrimitive(ctx, cmd);
+      });
+    });
+
+    if (config.grsimEnabled && grsimMode.type !== "none" && cursorSvgPos) {
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      if (grsimMode.type === "ball") {
+        ctx.beginPath();
+        ctx.arc(cursorSvgPos.x, cursorSvgPos.y, 43, 0, Math.PI * 2);
+        ctx.fillStyle = "#FF8C00";
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#FFA500";
+        ctx.stroke();
+      } else if (grsimMode.type === "robot") {
+        ctx.beginPath();
+        ctx.arc(cursorSvgPos.x, cursorSvgPos.y, 90, 0, Math.PI * 2);
+        ctx.fillStyle = grsimMode.team === "yellow" ? "#FFD700" : "#4D9FFF";
+        ctx.fill();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = grsimMode.team === "yellow" ? "#DAA520" : "#2070CC";
+        ctx.stroke();
+        ctx.fillStyle = "#000";
+        ctx.font = "bold 70px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(grsimMode.id), cursorSvgPos.x, cursorSvgPos.y);
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }, [
+    config.backgroundColor,
+    config.enableUpdateTopic,
+    config.grsimEnabled,
+    config.namespaces,
+    currentDisplayMsg,
+    cursorSvgPos,
+    drawPrimitive,
+    getOrParsePrimitive,
+    getCanvasViewport,
+    grsimMode,
+    latest_msg,
+    parseViewBox,
+  ]);
+
+  useEffect(() => {
+    redrawNeededRef.current = true;
+  }, [
+    viewBox,
+    config.backgroundColor,
+    config.enableUpdateTopic,
+    config.grsimEnabled,
+    config.namespaces,
+    currentDisplayMsg,
+    latest_msg,
+    cursorSvgPos,
+    grsimMode,
+  ]);
+
+  useEffect(() => {
+    let rafId = 0;
+    const loop = () => {
+      if (redrawNeededRef.current) {
+        redrawNeededRef.current = false;
+        drawCanvasScene();
+      }
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, [drawCanvasScene]);
 
   const resetViewBox = useCallback(() => {
     const x = -config.viewBoxWidth / 2;
@@ -1153,7 +1554,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
         
         // 最新のメッセージを設定
         if (msg) setLatestMsg(msg);
-        setRecvNum(recv_num + 1);
 
         // 初期化時にconfig.namespacesを設定
         setConfig((prevConfig) => {
@@ -1166,20 +1566,40 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           return { ...prevConfig, namespaces: newNamespaces };
         });
         } else if (config.enableUpdateTopic && message.topic === config.updateTopic) {
-          // updateメッセージの履歴保存（同一msに複数を保持）
-          setUpdateMessages(prev => {
-            const map = new Map(prev);
-            const arr = map.get(timestamp) ?? [];
-            arr.push(message);
-            map.set(timestamp, arr);
-            return map;
-          });
+          // updateメッセージは50msでコアレスして反映
+          pendingUpdateMessagesRef.current.push(message);
+          if (coalesceTimerRef.current === undefined) {
+            coalesceTimerRef.current = window.setTimeout(() => {
+              const batch = pendingUpdateMessagesRef.current.splice(0);
+              coalesceTimerRef.current = undefined;
+              if (batch.length === 0) return;
+              setUpdateMessages((prev) => {
+                const map = new Map(prev);
+                batch.forEach((updateMessage) => {
+                  const updateTs =
+                    updateMessage.receiveTime.sec * 1000 + updateMessage.receiveTime.nsec / 1000000;
+                  const arr = map.get(updateTs) ?? [];
+                  arr.push(updateMessage);
+                  map.set(updateTs, arr);
+                });
+                return map;
+              });
+            }, 50);
+          }
         } else if (config.enableScoreboard && message.topic === config.refereeTopic) {
           setRefereeData(message.message as unknown as RefereeMessage);
         }
       }
     }
   }, [messages, config.aggregatedTopic, config.updateTopic, config.enableUpdateTopic, config.refereeTopic, config.enableScoreboard]);
+
+  useEffect(() => {
+    return () => {
+      if (coalesceTimerRef.current !== undefined) {
+        window.clearTimeout(coalesceTimerRef.current);
+      }
+    };
+  }, []);
 
   // seekTimeが変更された時のメッセージ合成処理
   useEffect(() => {
@@ -1247,19 +1667,6 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     });
   }, [currentDisplayMsg]);
 
-  // スクリーン座標 → SVG座標(mm)
-  const screenToSvgCoords = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
-    const svg = svgRef.current;
-    if (!svg) return null;
-    const ctm = svg.getScreenCTM();
-    if (!ctm) return null;
-    const pt = svg.createSVGPoint();
-    pt.x = clientX;
-    pt.y = clientY;
-    const svgPt = pt.matrixTransform(ctm.inverse());
-    return { x: svgPt.x, y: svgPt.y };
-  }, []);
-
   // SVG座標(mm) → grSim座標(m)
   const svgToGrsimCoords = useCallback((svgX: number, svgY: number): { x: number; y: number } => ({
     x: svgX / 1000,
@@ -1306,27 +1713,14 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
     }
   }, [publishSupported, context, grsimMode, robotDir, svgToGrsimCoords, config.grsimReplacementTopic]);
 
-  const handleCheckboxChange = (layer: string) => {
-    setConfig((prevConfig) => {
-      const newNamespaces = { ...prevConfig.namespaces };
-      if (!newNamespaces[layer]) {
-        newNamespaces[layer] = { visible: true };
-      }
-      newNamespaces[layer].visible = !newNamespaces[layer].visible;
-      return { ...prevConfig, namespaces: newNamespaces };
-    });
-  };
-
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
       <div style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative" }}>
-        <svg
-          ref={svgRef}
-          width="100%"
-          height="100%"
-          viewBox={viewBox}
+        <canvas
+          ref={canvasRef}
           style={{
-            backgroundColor: config.backgroundColor,
+            width: "100%",
+            height: "100%",
             cursor: (config.grsimEnabled && grsimMode.type !== "none") ? "crosshair" : "grab",
           }}
           onClick={(e) => {
@@ -1350,19 +1744,20 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
             isDraggingRef.current = false;
             const startX = e.clientX;
             const startY = e.clientY;
-            const [x, y, width, height] = viewBox.split(" ").map(Number);
-            const rect = svgRef.current?.getBoundingClientRect();
-            const svgPixelWidth = rect?.width ?? width;
-            const svgPixelHeight = rect?.height ?? height;
+            const vb = parseViewBox();
+            const rect = canvasRef.current?.getBoundingClientRect();
+            const canvasRect = { width: rect?.width ?? vb.width, height: rect?.height ?? vb.height };
+            const { scale } = getCanvasViewport(canvasRect, vb);
             const handleMouseMove = (e: MouseEvent) => {
               const dx = e.clientX - startX;
               const dy = e.clientY - startY;
               if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
                 isDraggingRef.current = true;
               }
-              const scaledDx = dx * (width / svgPixelWidth);
-              const scaledDy = dy * (height / svgPixelHeight);
-              setViewBox(`${x - scaledDx} ${y - scaledDy} ${width} ${height}`);
+              const scaledDx = dx / scale;
+              const scaledDy = dy / scale;
+              setViewBox(`${vb.x - scaledDx} ${vb.y - scaledDy} ${vb.width} ${vb.height}`);
+              invalidateRedraw();
             };
             const handleMouseUp = () => {
               document.removeEventListener("mousemove", handleMouseMove);
@@ -1373,7 +1768,7 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
           }}
           onWheel={(e) => {
             e.preventDefault();
-            const [x, y, width, height] = viewBox.split(" ").map(Number);
+            const { x, y, width, height } = parseViewBox();
             const scale = e.deltaY > 0 ? 1.2 : 0.8;
             let newWidth = width * scale;
             let newHeight = height * scale;
@@ -1390,54 +1785,9 @@ const CraneVisualizer: React.FC<{ context: PanelExtensionContext }> = ({ context
             const newX = centerX - newWidth / 2;
             const newY = centerY - newHeight / 2;
             setViewBox(`${newX} ${newY} ${newWidth} ${newHeight}`);
+            invalidateRedraw();
           }}
-        >
-          {(() => {
-            // 更新トピック有効時は合成結果を優先（シーク有無に関わらず）
-            const displayMsg = config.enableUpdateTopic
-              ? (currentDisplayMsg ?? latest_msg)
-              : latest_msg;
-            
-            return displayMsg?.svg_primitive_arrays.map((svg_primitive_array, index) => (
-              <g key={svg_primitive_array.layer} style={{ display: config.namespaces[svg_primitive_array.layer]?.visible ? 'block' : 'none' }}>
-                {svg_primitive_array.svg_primitives.map((svg_primitive, index) => (
-                  <g dangerouslySetInnerHTML={{ __html: svg_primitive }} />
-                ))}
-              </g>
-            ));
-          })()}
-          {/* grSimゴーストプレビュー */}
-          {config.grsimEnabled && grsimMode.type !== "none" && cursorSvgPos && (
-            <g opacity={0.5} pointerEvents="none">
-              {grsimMode.type === "ball" && (
-                <circle cx={cursorSvgPos.x} cy={cursorSvgPos.y} r={43} fill="#FF8C00" stroke="#FFA500" strokeWidth={3} />
-              )}
-              {grsimMode.type === "robot" && (
-                <>
-                  <circle
-                    cx={cursorSvgPos.x}
-                    cy={cursorSvgPos.y}
-                    r={90}
-                    fill={grsimMode.team === "yellow" ? "#FFD700" : "#4D9FFF"}
-                    stroke={grsimMode.team === "yellow" ? "#DAA520" : "#2070CC"}
-                    strokeWidth={4}
-                  />
-                  <text
-                    x={cursorSvgPos.x}
-                    y={cursorSvgPos.y}
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fontSize={70}
-                    fontWeight="bold"
-                    fill="#000"
-                  >
-                    {grsimMode.id}
-                  </text>
-                </>
-              )}
-            </g>
-          )}
-        </svg>
+        />
         {config.enableScoreboard && refereeData && (
           <ScoreboardOverlay refereeData={refereeData} />
         )}
